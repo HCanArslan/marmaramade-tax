@@ -8,6 +8,14 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    url: process.env.DIRECT_URL ?? process.env.DATABASE_URL ?? "",
+    // Schema migrations require a direct PostgreSQL connection. Neon injects
+    // DATABASE_URL_UNPOOLED (and its older POSTGRES_URL_NON_POOLING alias)
+    // alongside the pooled DATABASE_URL used by the serverless application.
+    url:
+      process.env.DIRECT_URL ??
+      process.env.DATABASE_URL_UNPOOLED ??
+      process.env.POSTGRES_URL_NON_POOLING ??
+      process.env.DATABASE_URL ??
+      "",
   },
 });

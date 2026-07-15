@@ -7,7 +7,7 @@ Vercel no longer offers a first-party Vercel Postgres product for new projects. 
 The application needs:
 
 - `DATABASE_URL`: the provider's pooled PostgreSQL URL for serverless runtime traffic.
-- `DIRECT_URL`: the provider's direct PostgreSQL URL for Prisma migrations. If the provider supplies only one URL, it can be used for both, but a direct migration URL is preferred.
+- A direct URL for Prisma migrations. The Vercel Neon integration already creates `DATABASE_URL_UNPOOLED` and `POSTGRES_URL_NON_POOLING`, which the Prisma config detects automatically. For another provider, set `DIRECT_URL` as an explicit override.
 
 Enable SSL through the provider URL. Never expose either variable with a `NEXT_PUBLIC_` prefix.
 
@@ -16,13 +16,14 @@ Enable SSL through the provider URL. Never expose either variable with a `NEXT_P
 Add these to the **Production** environment in Vercel Project Settings:
 
 - `DATABASE_URL`
-- `DIRECT_URL`
 - `AUTH_SECRET`
 - `ADMIN_EMAIL`
 - `ADMIN_PASSWORD_HASH`
 - `AUTH_MAX_FAILED_ATTEMPTS=5`
 - `AUTH_LOCKOUT_MINUTES=15`
 - `AUTH_SESSION_MAX_AGE_HOURS=8`
+
+When using Neon, leave its automatically managed database variables unchanged. Do not create a duplicate `DATABASE_URL` or copy a pooled URL into `DIRECT_URL`. For a non-Neon provider, add `DIRECT_URL` using that provider's direct connection string.
 
 For a stable custom domain, also set `NEXTAUTH_URL=https://your-domain.example`. Otherwise, enable Vercel's automatically exposed system environment variables so NextAuth can detect the deployment URL.
 
@@ -33,8 +34,9 @@ If Etsy integration is enabled, add:
 - `ETSY_SHARED_SECRET`
 - `ETSY_REDIRECT_URI=https://your-domain.example/api/etsy/oauth/callback`
 - `ETSY_SCOPES=shops_r listings_r transactions_r`
-- `ETSY_WEBHOOK_SIGNING_SECRET`
 - `ETSY_RAW_PAYLOAD_RETENTION_DAYS=0`
+
+`ETSY_WEBHOOK_SIGNING_SECRET` is optional until an Etsy webhook is registered. OAuth and manual synchronization do not use it; add it later before enabling webhook delivery.
 
 Use a stable production domain for Etsy. Do not register changing preview URLs as the primary callback.
 
@@ -53,7 +55,7 @@ For a brand-new empty demo database only, you may run `npm run db:seed`. The see
 
 ## 4. Deploy
 
-Import the GitHub repository into Vercel. Vercel detects Next.js automatically. The repository declares Node.js `>=20.19.0`; Node.js 22 is a suitable Vercel runtime.
+Import the GitHub repository into Vercel. Vercel detects Next.js automatically. The repository pins the deployment runtime to the Node.js 22 major release.
 
 The standard settings are sufficient:
 

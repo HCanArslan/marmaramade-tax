@@ -79,5 +79,6 @@ describe("reconciliation, webhooks and privacy", () => {
   it("rejects invalid webhook events", () => expect(() => validateWebhookEvent({ event_type:"listing.updated",resource_url:"https://evil.example",shop_id:1 })).toThrow());
   it("redacts customer and token data from logs", () => expect(redactSensitive({ email:"buyer@example.com",address:"secret",accessToken:"token",safe:"ok" })).toEqual({ email:"[REDACTED]",address:"[REDACTED]",accessToken:"[REDACTED]",safe:"ok" }));
   it("uses PostgreSQL in Prisma", async () => expect(await source("prisma/schema.prisma")).toMatch(/provider\s+=\s+"postgresql"/));
+  it("prefers Neon's direct URL for migrations", async () => { const config = await source("prisma.config.ts"); expect(config).toContain("process.env.DATABASE_URL_UNPOOLED"); expect(config.indexOf("process.env.DATABASE_URL_UNPOOLED")).toBeLessThan(config.indexOf("process.env.DATABASE_URL ??")); });
   it("keeps immutable snapshots free of updatedAt", async () => { const schema = await source("prisma/schema.prisma"); const block = schema.match(/model OrderCostSnapshot \{([\s\S]*?)\n\}/)?.[1] || ""; expect(block).not.toContain("@updatedAt"); });
 });
