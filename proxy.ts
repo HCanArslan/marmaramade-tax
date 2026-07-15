@@ -1,7 +1,12 @@
 import { withAuth } from "next-auth/middleware";
 
+const sessionTokenCookie = process.env.NODE_ENV === "production"
+  ? "__Secure-next-auth.session-token"
+  : "next-auth.session-token";
+
 export default withAuth({
   secret: process.env.AUTH_SECRET,
+  cookies: { sessionToken: { name: sessionTokenCookie } },
   pages: { signIn: "/login" },
   callbacks: { authorized: ({ token }) => token?.role === "ADMIN" },
 });
