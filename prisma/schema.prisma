@@ -8,8 +8,8 @@ datasource db {
 }
 
 model Product {
-  id                 String               @id @default(cuid())
-  sku                String               @unique
+  id                 String                   @id @default(cuid())
+  sku                String                   @unique
   title              String
   material           String?
   description        String?
@@ -20,15 +20,15 @@ model Product {
   productWeightGrams Decimal?
   primaryColor       String?
   secondaryColor     String?
-  lining             Boolean              @default(false)
-  interiorPocket     Boolean              @default(false)
+  lining             Boolean                  @default(false)
+  interiorPocket     Boolean                  @default(false)
   closureType        String?
   baseType           String?
-  oneOfOne           Boolean              @default(true)
-  active             Boolean              @default(true)
+  oneOfOne           Boolean                  @default(true)
+  active             Boolean                  @default(true)
   notes              String?
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
   costVersions       ProductCostVersion[]
   orderItems         OrderItem[]
   etsyListingLinks   EtsyListingProductLink[]
@@ -78,7 +78,7 @@ model Marketplace {
 }
 
 model FeeProfile {
-  id              String    @id @default(cuid())
+  id              String              @id @default(cuid())
   marketplace     String
   name            String
   country         String
@@ -87,8 +87,8 @@ model FeeProfile {
   listingCurrency String
   payoutCurrency  String
   notes           String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
   rules           FeeRule[]
   orders          Order[]
   snapshots       OrderCostSnapshot[]
@@ -98,32 +98,32 @@ model FeeProfile {
 }
 
 model FeeRule {
-  id               String     @id @default(cuid())
-  feeProfileId     String
-  name             String
-  category         String
-  calculationType  String
-  percentageRate   Decimal?
-  fixedAmount      Decimal?
-  fixedCurrency    String?
-  calculationBase  String?
-  vatApplicable    Boolean    @default(false)
-  vatRate          Decimal    @default(0)
-  minimumAmount    Decimal?
-  maximumAmount    Decimal?
-  effectiveFrom    DateTime
-  effectiveTo      DateTime?
-  sourceUrl        String?
-  notes            String?
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-  feeProfile       FeeProfile @relation(fields: [feeProfileId], references: [id], onDelete: Cascade)
+  id              String     @id @default(cuid())
+  feeProfileId    String
+  name            String
+  category        String
+  calculationType String
+  percentageRate  Decimal?
+  fixedAmount     Decimal?
+  fixedCurrency   String?
+  calculationBase String?
+  vatApplicable   Boolean    @default(false)
+  vatRate         Decimal    @default(0)
+  minimumAmount   Decimal?
+  maximumAmount   Decimal?
+  effectiveFrom   DateTime
+  effectiveTo     DateTime?
+  sourceUrl       String?
+  notes           String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  feeProfile      FeeProfile @relation(fields: [feeProfileId], references: [id], onDelete: Cascade)
 
   @@index([feeProfileId, category])
 }
 
 model BusinessProfileVersion {
-  id                           String      @id @default(cuid())
+  id                           String              @id @default(cuid())
   name                         String
   effectiveFrom                DateTime
   effectiveTo                  DateTime?
@@ -140,8 +140,8 @@ model BusinessProfileVersion {
   expectedMonthlyOrders        Int
   overheadAllocationMethod     String
   notes                        String?
-  createdAt                    DateTime    @default(now())
-  updatedAt                    DateTime    @updatedAt
+  createdAt                    DateTime            @default(now())
+  updatedAt                    DateTime            @updatedAt
   orders                       Order[]
   snapshots                    OrderCostSnapshot[]
 
@@ -150,64 +150,64 @@ model BusinessProfileVersion {
 }
 
 model ShippingQuote {
-  id                     String   @id @default(cuid())
-  originCountry          String
-  originCity             String
-  destinationCountry     String
-  destinationRegion      String?
-  carrier                String
-  serviceName            String
-  incoterm               String
-  packageLengthCm        Decimal
-  packageWidthCm         Decimal
-  packageHeightCm        Decimal
-  actualWeightKg         Decimal
-  volumetricDivisor      Decimal
-  volumetricWeightKg     Decimal
-  billableWeightKg       Decimal
-  shippingCost           Decimal
-  shippingCurrency       String
-  insuranceCost          Decimal
-  fuelSurcharge          Decimal
-  remoteAreaFee          Decimal
-  pickupFee              Decimal
-  otherCarrierFees       Decimal
-  quoteDate              DateTime
-  expirationDate         DateTime?
-  source                 String?
-  notes                  String?
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
-  orders                 Order[]
+  id                 String    @id @default(cuid())
+  originCountry      String
+  originCity         String
+  destinationCountry String
+  destinationRegion  String?
+  carrier            String
+  serviceName        String
+  incoterm           String
+  packageLengthCm    Decimal
+  packageWidthCm     Decimal
+  packageHeightCm    Decimal
+  actualWeightKg     Decimal
+  volumetricDivisor  Decimal
+  volumetricWeightKg Decimal
+  billableWeightKg   Decimal
+  shippingCost       Decimal
+  shippingCurrency   String
+  insuranceCost      Decimal
+  fuelSurcharge      Decimal
+  remoteAreaFee      Decimal
+  pickupFee          Decimal
+  otherCarrierFees   Decimal
+  quoteDate          DateTime
+  expirationDate     DateTime?
+  source             String?
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  orders             Order[]
 
   @@index([destinationCountry, quoteDate])
 }
 
 model CustomsQuote {
-  id                      String   @id @default(cuid())
-  originCountry           String
-  destinationCountry      String
-  hsCode                  String
-  productDescription      String
-  countryOfOrigin         String
-  declaredValue           Decimal
-  declaredValueCurrency   String
-  customsDutyRate         Decimal
-  customsDutyAmount       Decimal?
-  additionalTariffRate    Decimal
-  additionalTariffAmount  Decimal?
-  carrierProcessingFee    Decimal
-  brokerageFee            Decimal
-  customsClearanceFee     Decimal
-  insuranceFee            Decimal
-  otherDestinationFee     Decimal
-  quoteDate               DateTime
-  expirationDate          DateTime?
-  source                  String?
-  notes                   String?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
-  orders                  Order[]
+  id                     String    @id @default(cuid())
+  originCountry          String
+  destinationCountry     String
+  hsCode                 String
+  productDescription     String
+  countryOfOrigin        String
+  declaredValue          Decimal
+  declaredValueCurrency  String
+  customsDutyRate        Decimal
+  customsDutyAmount      Decimal?
+  additionalTariffRate   Decimal
+  additionalTariffAmount Decimal?
+  carrierProcessingFee   Decimal
+  brokerageFee           Decimal
+  customsClearanceFee    Decimal
+  insuranceFee           Decimal
+  otherDestinationFee    Decimal
+  quoteDate              DateTime
+  expirationDate         DateTime?
+  source                 String?
+  notes                  String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  orders                 Order[]
 
   @@index([destinationCountry, hsCode, quoteDate])
 }
@@ -228,31 +228,31 @@ model ExchangeRateSnapshot {
 }
 
 model Order {
-  id                         String                  @id @default(cuid())
-  orderNumber                String                  @unique
+  id                         String                 @id @default(cuid())
+  orderNumber                String                 @unique
   orderDate                  DateTime
   marketplace                String
   destinationCountry         String
   destinationRegion          String?
   currency                   String
   orderStatus                String
-  offsiteAdAttributed        Boolean                 @default(false)
-  trailingEtsyRevenueUsd     Decimal                 @default(0)
-  currencyConversionRequired Boolean                 @default(true)
-  depositFeeApplies          Boolean                 @default(false)
+  offsiteAdAttributed        Boolean                @default(false)
+  trailingEtsyRevenueUsd     Decimal                @default(0)
+  currencyConversionRequired Boolean                @default(true)
+  depositFeeApplies          Boolean                @default(false)
   businessProfileVersionId   String
   feeProfileId               String
   exchangeRateSnapshotId     String
   shippingQuoteId            String?
   customsQuoteId             String?
   notes                      String?
-  createdAt                  DateTime                @default(now())
-  updatedAt                  DateTime                @updatedAt
+  createdAt                  DateTime               @default(now())
+  updatedAt                  DateTime               @updatedAt
   businessProfileVersion     BusinessProfileVersion @relation(fields: [businessProfileVersionId], references: [id])
-  feeProfile                 FeeProfile              @relation(fields: [feeProfileId], references: [id])
-  exchangeRateSnapshot       ExchangeRateSnapshot    @relation(fields: [exchangeRateSnapshotId], references: [id])
-  shippingQuote              ShippingQuote?          @relation(fields: [shippingQuoteId], references: [id])
-  customsQuote               CustomsQuote?           @relation(fields: [customsQuoteId], references: [id])
+  feeProfile                 FeeProfile             @relation(fields: [feeProfileId], references: [id])
+  exchangeRateSnapshot       ExchangeRateSnapshot   @relation(fields: [exchangeRateSnapshotId], references: [id])
+  shippingQuote              ShippingQuote?         @relation(fields: [shippingQuoteId], references: [id])
+  customsQuote               CustomsQuote?          @relation(fields: [customsQuoteId], references: [id])
   items                      OrderItem[]
   snapshots                  OrderCostSnapshot[]
 
@@ -282,7 +282,7 @@ model OrderItem {
 }
 
 model OrderCostSnapshot {
-  id                       String                  @id @default(cuid())
+  id                       String                 @id @default(cuid())
   orderId                  String
   businessProfileVersionId String
   feeProfileId             String
@@ -293,11 +293,11 @@ model OrderCostSnapshot {
   estimatedProfitUsd       Decimal
   estimatedProfitTry       Decimal
   assumptionsJson          String
-  calculatedAt             DateTime                @default(now())
-  order                    Order                   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  calculatedAt             DateTime               @default(now())
+  order                    Order                  @relation(fields: [orderId], references: [id], onDelete: Restrict)
   businessProfileVersion   BusinessProfileVersion @relation(fields: [businessProfileVersionId], references: [id])
-  feeProfile               FeeProfile              @relation(fields: [feeProfileId], references: [id])
-  exchangeRateSnapshot     ExchangeRateSnapshot    @relation(fields: [exchangeRateSnapshotId], references: [id])
+  feeProfile               FeeProfile             @relation(fields: [feeProfileId], references: [id])
+  exchangeRateSnapshot     ExchangeRateSnapshot   @relation(fields: [exchangeRateSnapshotId], references: [id])
   lines                    OrderCostLine[]
 
   @@index([orderId, calculatedAt])
@@ -326,12 +326,12 @@ model OrderCostLine {
 }
 
 model Scenario {
-  id          String           @id @default(cuid())
-  name        String
-  inputsJson  String
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  results     ScenarioResult[]
+  id         String           @id @default(cuid())
+  name       String
+  inputsJson String
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  results    ScenarioResult[]
 }
 
 model ScenarioResult {
@@ -349,17 +349,17 @@ model ScenarioResult {
 }
 
 model MonthlyOverhead {
-  id               String   @id @default(cuid())
-  month            DateTime @unique
-  accountantTry    Decimal
+  id                String   @id @default(cuid())
+  month             DateTime @unique
+  accountantTry     Decimal
   socialSecurityTry Decimal
-  softwareTry      Decimal
-  bankingTry       Decimal
-  officeTry        Decimal
-  otherTry         Decimal
-  notes            String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  softwareTry       Decimal
+  bankingTry        Decimal
+  officeTry         Decimal
+  otherTry          Decimal
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 model AppSetting {
@@ -384,13 +384,13 @@ model AuditLog {
 }
 
 model LoginAttempt {
-  id          String   @id @default(cuid())
-  emailHash   String
-  ipHash      String
-  successful  Boolean
-  reasonCode  String
-  userAgent   String?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  emailHash  String
+  ipHash     String
+  successful Boolean
+  reasonCode String
+  userAgent  String?
+  createdAt  DateTime @default(now())
 
   @@index([emailHash, createdAt])
   @@index([ipHash, createdAt])
@@ -411,8 +411,8 @@ model AdminSecurityEvent {
 }
 
 model EtsyConnection {
-  id                      String        @id @default(cuid())
-  shopId                  String        @unique
+  id                      String            @id @default(cuid())
+  shopId                  String            @unique
   etsyUserId              String
   shopName                String?
   shopTitle               String?
@@ -422,14 +422,14 @@ model EtsyConnection {
   encryptedRefreshToken   String
   accessTokenExpiresAt    DateTime
   scopes                  String
-  connectedAt             DateTime      @default(now())
+  connectedAt             DateTime          @default(now())
   disconnectedAt          DateTime?
   lastRefreshedAt         DateTime?
   lastSuccessfulApiCallAt DateTime?
   lastSuccessfulSyncAt    DateTime?
-  status                  String        @default("ACTIVE")
-  createdAt               DateTime      @default(now())
-  updatedAt               DateTime      @updatedAt
+  status                  String            @default("ACTIVE")
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
   syncRuns                EtsySyncRun[]
   listings                EtsyListing[]
   receipts                EtsyReceipt[]
@@ -440,54 +440,54 @@ model EtsyConnection {
 }
 
 model EtsyOAuthState {
-  id           String    @id @default(cuid())
-  stateHash    String    @unique
-  verifier     String
-  redirectUri  String
-  expiresAt    DateTime
-  consumedAt   DateTime?
-  createdAt    DateTime  @default(now())
+  id          String    @id @default(cuid())
+  stateHash   String    @unique
+  verifier    String
+  redirectUri String
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
 
   @@index([expiresAt, consumedAt])
 }
 
 model EtsySyncRun {
-  id                  String           @id @default(cuid())
-  connectionId        String
-  syncType            String
-  status              String           @default("RUNNING")
-  cursor               String?
-  startedAt            DateTime         @default(now())
-  completedAt          DateTime?
-  listingsImported    Int              @default(0)
-  receiptsImported    Int              @default(0)
-  paymentsImported    Int              @default(0)
-  ledgerEntriesImported Int            @default(0)
-  rateLimitRemaining  Int?
-  retryAfterSeconds   Int?
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
-  connection          EtsyConnection   @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  errors              EtsySyncError[]
-  listings            EtsyListing[]
-  receipts            EtsyReceipt[]
-  payments            EtsyPayment[]
-  ledgerEntries       EtsyLedgerEntry[]
+  id                    String            @id @default(cuid())
+  connectionId          String
+  syncType              String
+  status                String            @default("RUNNING")
+  cursor                String?
+  startedAt             DateTime          @default(now())
+  completedAt           DateTime?
+  listingsImported      Int               @default(0)
+  receiptsImported      Int               @default(0)
+  paymentsImported      Int               @default(0)
+  ledgerEntriesImported Int               @default(0)
+  rateLimitRemaining    Int?
+  retryAfterSeconds     Int?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  connection            EtsyConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  errors                EtsySyncError[]
+  listings              EtsyListing[]
+  receipts              EtsyReceipt[]
+  payments              EtsyPayment[]
+  ledgerEntries         EtsyLedgerEntry[]
 
   @@index([connectionId, startedAt])
   @@index([status])
 }
 
 model EtsySyncError {
-  id          String      @id @default(cuid())
-  syncRunId   String
-  resource    String
+  id         String      @id @default(cuid())
+  syncRunId  String
+  resource   String
   externalId String?
-  code        String
-  message     String
-  retryable   Boolean     @default(false)
-  createdAt   DateTime    @default(now())
-  syncRun     EtsySyncRun @relation(fields: [syncRunId], references: [id], onDelete: Cascade)
+  code       String
+  message    String
+  retryable  Boolean     @default(false)
+  createdAt  DateTime    @default(now())
+  syncRun    EtsySyncRun @relation(fields: [syncRunId], references: [id], onDelete: Cascade)
 
   @@index([syncRunId, createdAt])
 }
@@ -505,9 +505,24 @@ model EtsyListing {
   priceCurrency      String
   quantity           Int
   taxonomyId         String?
+  shopSectionId      String?
+  shippingProfileId  String?
+  returnPolicyId     String?
   url                String?
   favorerCount       Int?
   listingType        String?
+  isTaxable          Boolean?
+  nonTaxable         Boolean?
+  isCustomizable     Boolean?
+  isPersonalizable   Boolean?
+  tags               String[]                @default([])
+  materials          String[]                @default([])
+  itemWeight         Decimal?
+  itemWeightUnit     String?
+  itemLength         Decimal?
+  itemWidth          Decimal?
+  itemHeight         Decimal?
+  itemDimensionsUnit String?
   processingMinDays  Int?
   processingMaxDays  Int?
   inventorySummary   Json?
@@ -521,7 +536,7 @@ model EtsyListing {
   createdAt          DateTime                @default(now())
   updatedAt          DateTime                @updatedAt
   connection         EtsyConnection          @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  syncRun            EtsySyncRun?             @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
+  syncRun            EtsySyncRun?            @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
   images             EtsyListingImage[]
   productLink        EtsyListingProductLink?
   receiptItems       EtsyReceiptItem[]
@@ -531,69 +546,69 @@ model EtsyListing {
 }
 
 model EtsyListingImage {
-  id             String      @id @default(cuid())
-  etsyImageId    String      @unique
-  etsyListingId  String
-  rank           Int
-  urlFull        String
-  urlThumbnail   String?
+  id              String      @id @default(cuid())
+  etsyImageId     String      @unique
+  etsyListingId   String
+  rank            Int
+  urlFull         String
+  urlThumbnail    String?
   sourceUpdatedAt DateTime?
-  firstImportedAt DateTime   @default(now())
-  lastImportedAt DateTime    @default(now())
-  listing        EtsyListing @relation(fields: [etsyListingId], references: [etsyListingId], onDelete: Cascade)
+  firstImportedAt DateTime    @default(now())
+  lastImportedAt  DateTime    @default(now())
+  listing         EtsyListing @relation(fields: [etsyListingId], references: [etsyListingId], onDelete: Cascade)
 
   @@index([etsyListingId, rank])
 }
 
 model EtsyListingProductLink {
-  id             String      @id @default(cuid())
-  etsyListingId  String      @unique
-  productId      String
-  skuConflict    Boolean     @default(false)
-  confirmedAt    DateTime    @default(now())
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-  listing        EtsyListing @relation(fields: [etsyListingId], references: [etsyListingId], onDelete: Cascade)
-  product        Product     @relation(fields: [productId], references: [id], onDelete: Restrict)
+  id            String      @id @default(cuid())
+  etsyListingId String      @unique
+  productId     String
+  skuConflict   Boolean     @default(false)
+  confirmedAt   DateTime    @default(now())
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  listing       EtsyListing @relation(fields: [etsyListingId], references: [etsyListingId], onDelete: Cascade)
+  product       Product     @relation(fields: [productId], references: [id], onDelete: Restrict)
 
   @@index([productId])
 }
 
 model EtsyReceipt {
-  id                    String            @id @default(cuid())
-  connectionId          String
-  syncRunId             String?
-  etsyReceiptId         String            @unique
-  localOrderId          String?
-  sourceCreatedAt       DateTime
-  sourceUpdatedAt       DateTime?
-  paidAt                DateTime?
-  shippedAt             DateTime?
-  paymentStatus         String?
-  shipmentStatus        String?
-  destinationCountry    String?
-  destinationRegion     String?
-  postalCodePrefix      String?
-  buyerCurrency         String?
-  subtotalAmount        Decimal
-  shippingAmount        Decimal
-  discountAmount        Decimal
-  giftWrapAmount        Decimal
-  taxAmount             Decimal
-  totalAmount           Decimal
-  refundAmount          Decimal
-  currency              String
-  sourceHash            String
-  needsReconciliation   Boolean           @default(false)
-  firstImportedAt       DateTime          @default(now())
-  lastImportedAt        DateTime          @default(now())
-  lastChangedAt         DateTime          @default(now())
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
-  connection            EtsyConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  syncRun               EtsySyncRun?       @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
-  items                 EtsyReceiptItem[]
-  payments              EtsyPayment[]
+  id                  String            @id @default(cuid())
+  connectionId        String
+  syncRunId           String?
+  etsyReceiptId       String            @unique
+  localOrderId        String?
+  sourceCreatedAt     DateTime
+  sourceUpdatedAt     DateTime?
+  paidAt              DateTime?
+  shippedAt           DateTime?
+  paymentStatus       String?
+  shipmentStatus      String?
+  destinationCountry  String?
+  destinationRegion   String?
+  postalCodePrefix    String?
+  buyerCurrency       String?
+  subtotalAmount      Decimal
+  shippingAmount      Decimal
+  discountAmount      Decimal
+  giftWrapAmount      Decimal
+  taxAmount           Decimal
+  totalAmount         Decimal
+  refundAmount        Decimal
+  currency            String
+  sourceHash          String
+  needsReconciliation Boolean           @default(false)
+  firstImportedAt     DateTime          @default(now())
+  lastImportedAt      DateTime          @default(now())
+  lastChangedAt       DateTime          @default(now())
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  connection          EtsyConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  syncRun             EtsySyncRun?      @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
+  items               EtsyReceiptItem[]
+  payments            EtsyPayment[]
 
   @@index([connectionId, sourceCreatedAt])
   @@index([localOrderId])
@@ -620,30 +635,30 @@ model EtsyReceiptItem {
 }
 
 model EtsyPayment {
-  id                String         @id @default(cuid())
-  connectionId      String
-  syncRunId         String?
-  etsyPaymentId     String         @unique
-  etsyReceiptId     String?
-  amount            Decimal
-  adjustedAmount    Decimal
-  shippingAmount    Decimal
-  taxAmount         Decimal
-  feeAmount         Decimal
-  netAmount         Decimal
-  currency          String
-  buyerCurrency     String?
-  paidAt            DateTime?
-  sourceUpdatedAt   DateTime?
-  sourceHash        String
-  firstImportedAt   DateTime       @default(now())
-  lastImportedAt    DateTime       @default(now())
-  lastChangedAt     DateTime       @default(now())
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-  connection        EtsyConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  syncRun           EtsySyncRun?    @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
-  receipt           EtsyReceipt?    @relation(fields: [etsyReceiptId], references: [etsyReceiptId], onDelete: SetNull)
+  id              String         @id @default(cuid())
+  connectionId    String
+  syncRunId       String?
+  etsyPaymentId   String         @unique
+  etsyReceiptId   String?
+  amount          Decimal
+  adjustedAmount  Decimal
+  shippingAmount  Decimal
+  taxAmount       Decimal
+  feeAmount       Decimal
+  netAmount       Decimal
+  currency        String
+  buyerCurrency   String?
+  paidAt          DateTime?
+  sourceUpdatedAt DateTime?
+  sourceHash      String
+  firstImportedAt DateTime       @default(now())
+  lastImportedAt  DateTime       @default(now())
+  lastChangedAt   DateTime       @default(now())
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  connection      EtsyConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  syncRun         EtsySyncRun?   @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
+  receipt         EtsyReceipt?   @relation(fields: [etsyReceiptId], references: [etsyReceiptId], onDelete: SetNull)
 
   @@index([connectionId, paidAt])
   @@index([etsyReceiptId])
@@ -673,23 +688,23 @@ model EtsyLedgerEntry {
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
   connection          EtsyConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  syncRun             EtsySyncRun?    @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
+  syncRun             EtsySyncRun?   @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
 
   @@index([connectionId, sourceCreatedAt])
   @@index([mappedCategory, manualReview])
 }
 
 model EtsyWebhookEvent {
-  id             String   @id @default(cuid())
-  webhookId      String   @unique
-  eventType      String
-  shopId         String
-  resourceUrl    String
-  payloadHash    String
+  id               String    @id @default(cuid())
+  webhookId        String    @unique
+  eventType        String
+  shopId           String
+  resourceUrl      String
+  payloadHash      String
   webhookTimestamp DateTime
-  processedAt    DateTime?
-  status         String   @default("VERIFIED")
-  createdAt      DateTime @default(now())
+  processedAt      DateTime?
+  status           String    @default("VERIFIED")
+  createdAt        DateTime  @default(now())
 
   @@index([shopId, createdAt])
 }

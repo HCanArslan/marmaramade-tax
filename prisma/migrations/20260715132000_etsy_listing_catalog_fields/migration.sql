@@ -1,0 +1,16 @@
+ALTER TABLE "EtsyListing"
+ADD COLUMN "shopSectionId" TEXT,
+ADD COLUMN "shippingProfileId" TEXT,
+ADD COLUMN "returnPolicyId" TEXT,
+ADD COLUMN "isTaxable" BOOLEAN,
+ADD COLUMN "nonTaxable" BOOLEAN,
+ADD COLUMN "isCustomizable" BOOLEAN,
+ADD COLUMN "isPersonalizable" BOOLEAN,
+ADD COLUMN "tags" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+ADD COLUMN "materials" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+ADD COLUMN "itemWeight" DECIMAL(65,30),
+ADD COLUMN "itemWeightUnit" TEXT,
+ADD COLUMN "itemLength" DECIMAL(65,30),
+ADD COLUMN "itemWidth" DECIMAL(65,30),
+ADD COLUMN "itemHeight" DECIMAL(65,30),
+ADD COLUMN "itemDimensionsUnit" TEXT;

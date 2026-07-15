@@ -16,7 +16,7 @@ import { linkEtsyListingAction } from "@/app/actions/listings";
 export default async function EtsyImportPage() {
   await requireAdmin({ redirectTo: "/etsy-import" });
   const connection = await getActiveConnection();
-  const [listings, receipts, payments, ledger, errors, products, lastRun] =
+  const [listings, receipts, payments, ledger, products, lastRun] =
     connection
       ? await Promise.all([
           prisma.etsyListing.findMany({
@@ -36,11 +36,6 @@ export default async function EtsyImportPage() {
             orderBy: { sourceCreatedAt: "desc" },
             take: 20,
           }),
-          prisma.etsySyncError.findMany({
-            where: { syncRun: { connectionId: connection.id } },
-            orderBy: { createdAt: "desc" },
-            take: 10,
-          }),
           prisma.product.findMany({
             where: { active: true },
             orderBy: { sku: "asc" },
@@ -48,9 +43,11 @@ export default async function EtsyImportPage() {
           prisma.etsySyncRun.findFirst({
             where: { connectionId: connection.id },
             orderBy: { startedAt: "desc" },
+            include: { errors: { orderBy: { createdAt: "desc" }, take: 10 } },
           }),
         ])
-      : [[], [], 0, [], [], [], null];
+      : [[], [], 0, [], [], null];
+  const errors = lastRun?.errors || [];
   const unmapped = listings.filter((listing) => !listing.productLink);
   const reviewLedger = ledger.filter((entry) => entry.manualReview);
   return (

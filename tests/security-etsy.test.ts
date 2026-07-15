@@ -16,6 +16,7 @@ import { mapLedgerEntry } from "@/lib/etsy/mappers";
 import { reconcileFee } from "@/lib/etsy/reconciliation";
 import { redactSensitive } from "@/lib/etsy/redaction";
 import { validateWebhookEvent, verifyEtsyWebhook } from "@/lib/etsy/webhook";
+import { ETSY_LISTING_STATES, EtsyEndpoints } from "@/lib/etsy/endpoints";
 import { createHmac, randomBytes } from "node:crypto";
 
 const root = process.cwd();
@@ -56,6 +57,10 @@ describe("OAuth, tokens and synchronization", () => {
   it("refreshes through the OAuth-only token endpoint", async () => { const fetcher = vi.fn(async () => new Response(JSON.stringify({ access_token:"1.access",refresh_token:"1.refresh",expires_in:3600,token_type:"Bearer" }), { status: 200 })); const result = await refreshAccessToken({ clientId:"key",refreshToken:"old" }, fetcher as typeof fetch); expect(result.access_token).toBe("1.access"); expect(fetcher).toHaveBeenCalledOnce(); });
   it("recognizes expired and near-expiry tokens", () => { expect(tokenNeedsRefresh(new Date(Date.now() - 1))).toBe(true); expect(tokenNeedsRefresh(new Date(Date.now() + 60 * 60_000))).toBe(false); });
   it("paginates listings without duplicates", async () => { const result = await collectOffsetPages(async (offset, limit) => ({ count: 3, results: [0,1,2].slice(offset, offset + limit) }), { limit: 2 }); expect(result.results).toEqual([0,1,2]); });
+  it("covers every Etsy seller listing state", () => { expect(ETSY_LISTING_STATES).toEqual(["active", "inactive", "sold_out", "draft", "expired"]); for (const state of ETSY_LISTING_STATES) expect(EtsyEndpoints.listings("1", state, 0)).toContain(`state=${state}`); });
+  it("renders products from synchronized Etsy records", async () => { const page = await source("app/products/page.tsx"); expect(page).toContain("prisma.etsyListing.findMany"); expect(page).toContain("Sync Etsy listings"); });
+  it("includes Etsy's required ledger date range", () => { const endpoint = EtsyEndpoints.ledger("1", 946684800, 1800000000, 0); expect(endpoint).toContain("min_created=946684800"); expect(endpoint).toContain("max_created=1800000000"); });
+  it("creates local product shells without overwriting existing links", async () => { const sync = await source("lib/etsy/sync.ts"); expect(sync).toContain("ensureLocalProductLink"); expect(sync).toContain("if (existingLink) return"); expect(sync).toContain("prisma.product.upsert"); });
   it("paginates receipts using the same bounded helper", async () => { const result = await collectOffsetPages(async (offset) => ({ count: 2, results: offset === 0 ? ["a","b"] : [] })); expect(result.results).toEqual(["a","b"]); });
   it("recovers from a transient partial request", async () => { let attempts = 0; const result = await withEtsyRetry(async () => { attempts += 1; if (attempts === 1) throw new EtsyApiError(429, 0, "limited"); return "ok"; }, { sleep: async () => undefined }); expect(result).toBe("ok"); expect(attempts).toBe(2); });
   it("does not retry permanent validation errors", async () => { let attempts = 0; await expect(withEtsyRetry(async () => { attempts += 1; throw new Error("invalid"); }, { sleep: async () => undefined })).rejects.toThrow("invalid"); expect(attempts).toBe(1); });

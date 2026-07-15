@@ -14,6 +14,9 @@ const securityHeaders = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   poweredByHeader: false,
+  images: {
+    remotePatterns: [{ protocol: "https", hostname: "i.etsystatic.com" }],
+  },
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },
