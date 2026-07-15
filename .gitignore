@@ -1,0 +1,11 @@
+node_modules
+.pnpm-store
+.next
+generated/
+.env
+.tmp-postgres/
+.tmp-postgres.log
+prisma/*.db
+prisma/*.db-journal
+coverage
+*.tsbuildinfo

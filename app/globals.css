@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #1d2926;
+  --color-cream: #f7f4ed;
+  --color-jade: #176b5b;
+  --color-coral: #e16a4a;
+  --color-sand: #dfd3bd;
+  --shadow-soft: 0 18px 45px rgba(39, 48, 44, 0.08);
+}
+
+:root { color-scheme: light; }
+* { border-color: #e4dfd5; }
+body { margin: 0; background: #f7f4ed; color: #1d2926; font-feature-settings: "tnum" 1, "ss01" 1; }
+button, input, select { font: inherit; }
+input:focus, select:focus, button:focus-visible { outline: 2px solid #176b5b; outline-offset: 2px; }
+::selection { background: #c9e3dc; }
+
+@layer components {
+  .card { @apply rounded-2xl border border-stone-200 bg-white shadow-soft; }
+  .eyebrow { @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500; }
+  .field { @apply w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm text-ink shadow-sm transition hover:border-stone-300 focus:border-jade; }
+  .pill { @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium; }
+}
