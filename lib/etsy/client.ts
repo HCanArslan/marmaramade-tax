@@ -13,6 +13,6 @@ export async function etsyGet<T>(urlOrPath: string, options: EtsyGetOptions): Pr
     signal: options.signal,
     cache: "no-store",
   });
-  if (!response.ok) throw await EtsyApiError.fromResponse(response);
+  if (!response.ok) throw await EtsyApiError.fromResponse(response, url.pathname);
   return { data: await response.json() as T, headers: response.headers };
 }
