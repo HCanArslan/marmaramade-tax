@@ -12,12 +12,14 @@ import { withEtsyRetry } from "@/lib/etsy/rate-limit";
 import { assertReadOnlyEtsyScopes } from "@/lib/etsy/scopes";
 import { EtsyApiError } from "@/lib/etsy/errors";
 import { Prisma } from "@/generated/prisma/client";
+import { ZodError } from "zod";
 
 export const ETSY_SYNC_TYPES = ["INITIAL_FULL", "INCREMENTAL", "LISTINGS_ONLY", "ORDERS_ONLY", "PAYMENTS_ONLY", "LEDGER_ONLY"] as const;
 export type EtsySyncType = (typeof ETSY_SYNC_TYPES)[number];
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const date = (seconds?: number | null) => seconds ? new Date(seconds * 1000) : null;
-const amount = (money?: { amount: number; divisor: number }) => new Prisma.Decimal(money ? money.amount : 0).div(money?.divisor || 1);
+const amount = (money?: { amount: number; divisor: number } | null) => new Prisma.Decimal(money ? money.amount : 0).div(money?.divisor || 1);
+const optionalAmount = (money?: { amount: number; divisor: number } | null) => money ? amount(money) : null;
 const decimal = (value?: number | null) => value == null ? null : new Prisma.Decimal(value);
 
 export async function syncEtsy(type: EtsySyncType) {
@@ -43,7 +45,7 @@ export async function syncEtsy(type: EtsySyncType) {
   } catch (error) {
     await recordSyncError(run.id, error instanceof EtsyApiError ? error.resource || "ETSY_API" : "SYNC", null, error);
     const partial = await prisma.etsySyncRun.update({ where: { id: run.id }, data: { status: "PARTIAL", completedAt: new Date() } });
-    if (error instanceof EtsyApiError) return partial;
+    if (error instanceof EtsyApiError || error instanceof ZodError) return partial;
     throw error;
   }
 }
@@ -72,6 +74,14 @@ async function importListings(connectionId: string, syncRunId: string, shopId: s
       state: listing.state,
       priceAmount: amount(listing.price),
       priceCurrency: listing.price.currency_code,
+      buyerOriginalPrice: optionalAmount(listing.buyer_price?.original_price),
+      buyerDiscountedPrice: optionalAmount(listing.buyer_price?.discounted_price),
+      buyerDiscountAmount: optionalAmount(listing.buyer_price?.discount_amount),
+      buyerDiscountPercentage: listing.buyer_price?.discount_percentage == null ? null : new Prisma.Decimal(listing.buyer_price.discount_percentage),
+      buyerHasDiscount: listing.buyer_price?.has_discount ?? null,
+      buyerPriceCurrency: listing.buyer_price?.discounted_price?.currency_code || listing.buyer_price?.original_price?.currency_code || null,
+      discountStartAt: date(listing.buyer_price?.discount_start_epoch),
+      discountEndAt: date(listing.buyer_price?.discount_end_epoch),
       quantity: listing.quantity,
       taxonomyId: listing.taxonomy_id ? String(listing.taxonomy_id) : null,
       shopSectionId: listing.shop_section_id ? String(listing.shop_section_id) : null,
@@ -149,13 +159,17 @@ async function importLedgerAndPayments(connectionId: string, syncRunId: string, 
 
 async function recordSyncError(syncRunId: string, resource: string, externalId: string | null, error: unknown) {
   const apiError = error instanceof EtsyApiError ? error : null;
+  const validationError = error instanceof ZodError ? error : null;
+  const validationMessage = validationError
+    ? `${validationError.issues.length} Etsy response validation issue(s): ${validationError.issues.slice(0, 5).map((issue) => `${issue.path.join(".") || "response"}: ${issue.message}`).join("; ")}`
+    : null;
   await prisma.etsySyncError.create({
     data: {
       syncRunId,
       resource,
       externalId,
-      code: apiError ? `ETSY_${apiError.status}` : error instanceof Error ? error.name : "ERROR",
-      message: error instanceof Error ? error.message.slice(0, 500) : "Etsy synchronization could not complete.",
+      code: apiError ? `ETSY_${apiError.status}` : validationError ? "ETSY_RESPONSE_VALIDATION" : error instanceof Error ? error.name : "ERROR",
+      message: (validationMessage || (error instanceof Error ? error.message : "Etsy synchronization could not complete.")).slice(0, 500),
       retryable: apiError?.retryable || false,
     },
   });

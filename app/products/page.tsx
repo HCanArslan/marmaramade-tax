@@ -11,8 +11,10 @@ import {
   Tag,
 } from "lucide-react";
 import { syncEtsyAction } from "@/app/actions/etsy";
+import { setListingDiscountAction } from "@/app/actions/listings";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { getActiveConnection } from "@/lib/etsy/auth";
+import { resolveListingPricing } from "@/lib/etsy/pricing";
 import { prisma } from "@/lib/prisma";
 
 export default async function ProductsPage() {
@@ -91,6 +93,7 @@ export default async function ProductsPage() {
               const localProduct = listing.productLink?.product;
               const variationCount = inventoryProductCount(listing.inventorySummary);
               const dimensions = formatDimensions(listing);
+              const pricing = resolveListingPricing(listing);
               return (
                 <article className="card overflow-hidden" key={listing.id}>
                   <div className="grid sm:grid-cols-[180px_1fr]">
@@ -118,7 +121,9 @@ export default async function ProductsPage() {
                       </div>
 
                       <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
-                        <Datum label="Price" value={formatCurrency(listing.priceAmount.toString(), listing.priceCurrency)} />
+                        <Datum label="Original price" value={formatCurrency(pricing.originalPrice.toString(), pricing.currency)} />
+                        <Datum label="Current buyer price" value={formatCurrency(pricing.discountedPrice.toString(), pricing.currency)} />
+                        <Datum label="Discount" value={pricing.discountPercentage.gt(0) ? `${pricing.discountPercentage.toDecimalPlaces(2).toString()}% · ${pricing.source === "ETSY" ? "from Etsy" : "local override"}` : "No active discount"} />
                         <Datum label="Quantity" value={String(listing.quantity)} />
                         <Datum label="Variations" value={String(variationCount)} />
                         <Datum label="Favorites" value={String(listing.favorerCount || 0)} />
@@ -127,6 +132,21 @@ export default async function ProductsPage() {
                         <Datum label="Processing" value={formatProcessing(listing.processingMinDays, listing.processingMaxDays)} />
                         <Datum label="Shipping profile" value={listing.shippingProfileId || "Not supplied"} />
                       </div>
+
+                      <form action={setListingDiscountAction} className="mt-4 rounded-xl border border-stone-200 bg-stone-50 p-3">
+                        <input type="hidden" name="etsyListingId" value={listing.etsyListingId} />
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                          <label className="min-w-0 flex-1">
+                            <span className="mb-1.5 block text-xs font-medium text-stone-600">Local discount override</span>
+                            <div className="relative">
+                              <input className="field pr-8" type="number" min="0" max="100" step="0.01" name="manualDiscountPercentage" defaultValue={listing.manualDiscountPercentage?.toString() || ""} placeholder={listing.buyerHasDiscount ? "Using Etsy discount" : "No override"} />
+                              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-stone-400">%</span>
+                            </div>
+                          </label>
+                          <button className="rounded-xl border bg-white px-3 py-2.5 text-xs font-medium">Save discount</button>
+                        </div>
+                        <p className="mt-2 text-[11px] leading-4 text-stone-500">Leave blank to use Etsy&apos;s BuyerPrice discount automatically. The override changes only this dashboard, never your Etsy shop.</p>
+                      </form>
 
                       {(listing.materials.length > 0 || listing.tags.length > 0) && (
                         <div className="mt-4 space-y-2 text-xs text-stone-500">
@@ -137,7 +157,7 @@ export default async function ProductsPage() {
 
                       <div className={`mt-5 rounded-xl border p-3 text-xs ${localProduct ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
                         {localProduct ? (
-                          <>Linked to {localProduct.sku} · {localProduct.costVersions.length ? "latest cost version available" : "cost version still missing"}</>
+                          <div className="flex flex-wrap items-center justify-between gap-2"><span>Linked to {localProduct.sku} · {localProduct.costVersions.length ? "latest cost version available" : "cost version still missing"}</span><Link href="/calculator" className="font-medium underline">Use in calculator →</Link></div>
                         ) : (
                           <><AlertTriangle className="mr-1.5 inline" size={14} />Not linked to a local product, so costs, package, shipping and tariff calculations are not yet product-specific.</>
                         )}

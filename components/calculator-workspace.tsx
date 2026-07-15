@@ -9,10 +9,31 @@ import { formatMoney } from "@/lib/domain/money";
 import type { CalculatorInput } from "@/lib/domain/types";
 
 type Tab = "quick" | "reverse" | "company";
-const costKeys = ["materialCostTry", "laborHours", "laborHourlyRateTry", "packagingCostTry"] as const;
+const costKeys = ["materialCostTry", "laborHours", "laborHourlyRateTry", "packagingCostTry", "additionalDirectCostTry"] as const;
 
-export function CalculatorWorkspace() {
+export interface CalculatorProductPreset {
+  id: string;
+  productId: string;
+  sku: string;
+  title: string;
+  listingTitle: string;
+  currency: string;
+  originalPrice: string;
+  discountedPrice: string;
+  discountAmount: string;
+  discountPercentage: string;
+  discountSource: "ETSY" | "MANUAL" | "NONE";
+  materialCostTry: string;
+  laborHours: string;
+  laborHourlyRateTry: string;
+  packagingCostTry: string;
+  additionalDirectCostTry: string;
+  hasCostVersion: boolean;
+}
+
+export function CalculatorWorkspace({ products }: { products: CalculatorProductPreset[] }) {
   const [input, setInput] = useState<CalculatorInput>({ ...defaultCalculatorInput });
+  const [selectedProductId, setSelectedProductId] = useState("");
   const [tab, setTab] = useState<Tab>("quick");
   const [targetProfit, setTargetProfit] = useState("50");
   const [targetMargin, setTargetMargin] = useState("30");
@@ -20,14 +41,31 @@ export function CalculatorWorkspace() {
   const set = (key: keyof CalculatorInput, value: string | boolean) => setInput((current) => ({ ...current, [key]: value }));
   const reverseProfit = useMemo(() => solvePrice(input, { kind: "profitUsd", value: targetProfit || 0 }), [input, targetProfit]);
   const reverseMargin = useMemo(() => solvePrice(input, { kind: "margin", value: targetMargin || 0 }), [input, targetMargin]);
+  const selectedProduct = products.find((product) => product.id === selectedProductId);
+  const selectProduct = (id: string) => {
+    setSelectedProductId(id);
+    const product = products.find((item) => item.id === id);
+    if (!product) return;
+    setInput((current) => ({
+      ...current,
+      ...(product.currency === "USD" ? { itemSubtotalUsd: product.originalPrice, sellerFundedDiscountUsd: product.discountAmount } : {}),
+      materialCostTry: product.materialCostTry,
+      laborHours: product.laborHours,
+      laborHourlyRateTry: product.laborHourlyRateTry,
+      packagingCostTry: product.packagingCostTry,
+      additionalDirectCostTry: product.additionalDirectCostTry,
+    }));
+  };
+  const reset = () => { setInput({ ...defaultCalculatorInput }); setSelectedProductId(""); };
 
   return <div className="mx-auto max-w-[1500px] space-y-6">
-    <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Calculation workspace</p><h1 className="mt-2 text-3xl font-semibold tracking-[-.035em]">Price with every assumption visible.</h1><p className="mt-2 max-w-2xl text-sm text-stone-500">Native TRY costs stay in TRY. Every converted result uses the displayed USD/TRY snapshot.</p></div><button onClick={() => setInput({ ...defaultCalculatorInput })} className="inline-flex items-center justify-center gap-2 rounded-xl border bg-white px-4 py-2.5 text-sm"><RotateCcw size={15}/> Reset example</button></header>
+    <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="eyebrow">Calculation workspace</p><h1 className="mt-2 text-3xl font-semibold tracking-[-.035em]">Price with every assumption visible.</h1><p className="mt-2 max-w-2xl text-sm text-stone-500">Choose a synchronized product to load its Etsy price, discount and latest local cost version. Every value remains editable.</p></div><button onClick={reset} className="inline-flex items-center justify-center gap-2 rounded-xl border bg-white px-4 py-2.5 text-sm"><RotateCcw size={15}/> Reset example</button></header>
     <div className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-xl border bg-white p-1">{(["quick", "reverse", "company"] as Tab[]).map((item) => <button key={item} onClick={() => setTab(item)} className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium ${tab === item ? "bg-[#18342e] text-white" : "text-stone-500 hover:bg-stone-50"}`}>{item === "quick" ? "Quick calculator" : item === "reverse" ? "Reverse pricing" : "Company comparison"}</button>)}</div>
+    <section className="card p-5 sm:p-6"><div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,.7fr)] lg:items-end"><label><span className="mb-1.5 block text-xs font-medium text-stone-600">Product</span><select className="field" value={selectedProductId} onChange={(event) => selectProduct(event.target.value)}><option value="">Choose an Etsy product…</option>{products.map((product) => <option key={product.id} value={product.id}>{product.sku} · {product.listingTitle}</option>)}</select></label>{selectedProduct ? <div className="rounded-xl bg-emerald-50 px-4 py-3 text-xs text-emerald-900"><strong>{selectedProduct.currency} {new Decimal(selectedProduct.discountedPrice).toFixed(2)}</strong>{new Decimal(selectedProduct.discountPercentage).gt(0) ? ` after ${new Decimal(selectedProduct.discountPercentage).toDecimalPlaces(2).toString()}% ${selectedProduct.discountSource === "ETSY" ? "Etsy" : "local"} discount` : " · no active discount"}<span className="mt-1 block text-emerald-800/70">{selectedProduct.hasCostVersion ? "Latest local cost version loaded." : "No local cost version yet; cost fields remain zero."}</span></div> : <div className="rounded-xl bg-stone-50 px-4 py-3 text-xs text-stone-500">Select a product to prefill its available pricing and costs.</div>}</div>{selectedProduct && selectedProduct.currency !== "USD" && <p className="mt-3 text-xs text-amber-700"><AlertTriangle className="mr-1 inline" size={14}/>This calculator currently uses USD revenue. Costs were loaded, but the {selectedProduct.currency} Etsy price was not copied into the USD sale fields.</p>}</section>
     {tab === "quick" && <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_440px]">
       <div className="space-y-5">
         <InputSection title="Sale & marketplace" hint="USD revenue and Etsy triggers"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><NumberField label="Sale price" value={input.itemSubtotalUsd} suffix="USD" onChange={(v) => set("itemSubtotalUsd", v)}/><NumberField label="Shipping charged" value={input.shippingChargedToBuyerUsd} suffix="USD" onChange={(v) => set("shippingChargedToBuyerUsd", v)}/><NumberField label="Seller discount" value={input.sellerFundedDiscountUsd} suffix="USD" onChange={(v) => set("sellerFundedDiscountUsd", v)}/><NumberField label="USD / TRY snapshot" value={input.usdTryRate} suffix="TRY" onChange={(v) => set("usdTryRate", v)}/><Toggle label="Currency conversion" checked={input.currencyConversionRequired} onChange={(v) => set("currencyConversionRequired", v)}/><Toggle label="Offsite Ads (15%)" checked={input.offsiteAdAttributed} onChange={(v) => set("offsiteAdAttributed", v)}/></div></InputSection>
-        <InputSection title="Product cost" hint="Stored in native TRY"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{costKeys.map((key) => <NumberField key={key} label={({materialCostTry:"Material", laborHours:"Labor hours", laborHourlyRateTry:"Hourly rate", packagingCostTry:"Packaging"} as const)[key]} value={input[key]} suffix={key === "laborHours" ? "hours" : "TRY"} onChange={(v) => set(key, v)}/>)}</div><p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Product costs are intentionally not prefilled. Enter MarmaraMade&apos;s actual TRY costs.</p></InputSection>
+        <InputSection title="Product cost" hint="Stored in native TRY"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">{costKeys.map((key) => <NumberField key={key} label={({materialCostTry:"Material", laborHours:"Labor hours", laborHourlyRateTry:"Hourly rate", packagingCostTry:"Packaging", additionalDirectCostTry:"Other direct"} as const)[key]} value={input[key]} suffix={key === "laborHours" ? "hours" : "TRY"} onChange={(v) => set(key, v)}/>)}</div><p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Selecting a product loads its latest local cost version. Review and edit any missing or outdated values before relying on the result.</p></InputSection>
         <InputSection title="Shipping & DDP customs" hint="Manual dated quotes"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><NumberField label="International shipping" value={input.internationalShippingUsd} suffix="USD" onChange={(v) => set("internationalShippingUsd", v)}/><NumberField label="Customs duty" value={input.customsDutyUsd} suffix="USD" onChange={(v) => set("customsDutyUsd", v)}/><NumberField label="Additional tariff" value={input.additionalTariffUsd} suffix="USD" onChange={(v) => set("additionalTariffUsd", v)}/><NumberField label="Carrier processing" value={input.carrierProcessingFeeUsd} suffix="USD" onChange={(v) => set("carrierProcessingFeeUsd", v)}/><NumberField label="Domestic transfer" value={input.domesticTransferCostTry} suffix="TRY" onChange={(v) => set("domesticTransferCostTry", v)}/><div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3"><span className="pill border-emerald-200 bg-white text-emerald-700">DDP · US</span><p className="mt-2 text-xs leading-4 text-emerald-800">40 × 30 × 7 cm · 1.68 kg billable</p></div></div><p className="mt-3 flex gap-2 text-xs text-stone-500"><Info size={14} className="shrink-0"/> The $4.50 line is a destination carrier customs-processing charge, not a ShipEntegra service.</p></InputSection>
         <InputSection title="Reserves & overhead" hint="Planning entries, not official tax"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><NumberField label="Monthly overhead" value={input.monthlyOverheadTry} suffix="TRY" onChange={(v) => set("monthlyOverheadTry", v)}/><NumberField label="Expected orders" value={input.expectedMonthlyOrders} suffix="orders" onChange={(v) => set("expectedMonthlyOrders", v)}/><NumberField label="Return reserve" value={input.returnReserveRate} suffix="%" onChange={(v) => set("returnReserveRate", v)}/><NumberField label="Tax reserve" value={input.taxReserveRate} suffix="%" onChange={(v) => set("taxReserveRate", v)}/></div></InputSection>
       </div>

@@ -18,6 +18,9 @@ import { redactSensitive } from "@/lib/etsy/redaction";
 import { validateWebhookEvent, verifyEtsyWebhook } from "@/lib/etsy/webhook";
 import { ETSY_LISTING_STATES, EtsyEndpoints } from "@/lib/etsy/endpoints";
 import { createHmac, randomBytes } from "node:crypto";
+import Decimal from "decimal.js";
+import { etsyReceiptSchema } from "@/lib/etsy/schemas";
+import { resolveListingPricing } from "@/lib/etsy/pricing";
 
 const root = process.cwd();
 const source = (file: string) => readFile(path.join(root, file), "utf8");
@@ -58,7 +61,12 @@ describe("OAuth, tokens and synchronization", () => {
   it("recognizes expired and near-expiry tokens", () => { expect(tokenNeedsRefresh(new Date(Date.now() - 1))).toBe(true); expect(tokenNeedsRefresh(new Date(Date.now() + 60 * 60_000))).toBe(false); });
   it("paginates listings without duplicates", async () => { const result = await collectOffsetPages(async (offset, limit) => ({ count: 3, results: [0,1,2].slice(offset, offset + limit) }), { limit: 2 }); expect(result.results).toEqual([0,1,2]); });
   it("covers every Etsy seller listing state", () => { expect(ETSY_LISTING_STATES).toEqual(["active", "inactive", "sold_out", "draft", "expired"]); for (const state of ETSY_LISTING_STATES) expect(EtsyEndpoints.listings("1", state, 0)).toContain(`state=${state}`); });
+  it("requests Etsy BuyerPrice discount data", () => expect(EtsyEndpoints.listings("1", "active", 0)).toContain("includes=BuyerPrice"));
+  it("accepts Etsy's nullable receipt destination fields", () => { const money = { amount: 100, divisor: 100, currency_code: "USD" }; expect(() => etsyReceiptSchema.parse({ receipt_id: 1, create_timestamp: 1, country_iso: null, state: null, zip: null, grandtotal: money, subtotal: null, total_shipping_cost: null, total_tax_cost: null, discount_amt: null, transactions: null })).not.toThrow(); });
+  it("uses imported Etsy buyer discounts", () => { const pricing = resolveListingPricing({ priceAmount: new Decimal(100), priceCurrency: "USD", buyerOriginalPrice: new Decimal(100), buyerDiscountedPrice: new Decimal(80), buyerDiscountAmount: new Decimal(20), buyerDiscountPercentage: new Decimal(20), buyerHasDiscount: true, buyerPriceCurrency: "USD", manualDiscountPercentage: null }); expect(pricing.discountedPrice.toString()).toBe("80"); expect(pricing.source).toBe("ETSY"); });
+  it("allows a local discount to override Etsy pricing", () => { const pricing = resolveListingPricing({ priceAmount: new Decimal(100), priceCurrency: "USD", buyerOriginalPrice: new Decimal(100), buyerDiscountedPrice: new Decimal(80), buyerDiscountAmount: new Decimal(20), buyerDiscountPercentage: new Decimal(20), buyerHasDiscount: true, buyerPriceCurrency: "USD", manualDiscountPercentage: new Decimal(25) }); expect(pricing.discountedPrice.toString()).toBe("75"); expect(pricing.source).toBe("MANUAL"); });
   it("renders products from synchronized Etsy records", async () => { const page = await source("app/products/page.tsx"); expect(page).toContain("prisma.etsyListing.findMany"); expect(page).toContain("Sync Etsy listings"); });
+  it("loads synchronized product data into the calculator", async () => { expect(await source("app/calculator/page.tsx")).toContain("etsyListingLinks"); expect(await source("components/calculator-workspace.tsx")).toContain("Choose an Etsy product"); });
   it("includes Etsy's required ledger date range", () => { const endpoint = EtsyEndpoints.ledger("1", 946684800, 1800000000, 0); expect(endpoint).toContain("min_created=946684800"); expect(endpoint).toContain("max_created=1800000000"); });
   it("creates local product shells without overwriting existing links", async () => { const sync = await source("lib/etsy/sync.ts"); expect(sync).toContain("ensureLocalProductLink"); expect(sync).toContain("if (existingLink) return"); expect(sync).toContain("prisma.product.upsert"); });
   it("paginates receipts using the same bounded helper", async () => { const result = await collectOffsetPages(async (offset) => ({ count: 2, results: offset === 0 ? ["a","b"] : [] })); expect(result.results).toEqual(["a","b"]); });

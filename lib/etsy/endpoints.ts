@@ -2,7 +2,7 @@ const enc = encodeURIComponent;
 export const ETSY_LISTING_STATES = ["active", "inactive", "sold_out", "draft", "expired"] as const;
 export const EtsyEndpoints = {
   shop: (shopId: string) => `shops/${enc(shopId)}`,
-  listings: (shopId: string, state: (typeof ETSY_LISTING_STATES)[number], offset: number, limit = 100) => `shops/${enc(shopId)}/listings?state=${state}&limit=${limit}&offset=${offset}`,
+  listings: (shopId: string, state: (typeof ETSY_LISTING_STATES)[number], offset: number, limit = 100) => `shops/${enc(shopId)}/listings?state=${state}&limit=${limit}&offset=${offset}&includes=BuyerPrice`,
   listingImages: (listingId: string) => `listings/${enc(listingId)}/images`,
   listingInventory: (listingId: string) => `listings/${enc(listingId)}/inventory`,
   receipts: (shopId: string, offset: number, limit = 100) => `shops/${enc(shopId)}/receipts?limit=${limit}&offset=${offset}`,

@@ -493,53 +493,62 @@ model EtsySyncError {
 }
 
 model EtsyListing {
-  id                 String                  @id @default(cuid())
-  connectionId       String
-  syncRunId          String?
-  etsyListingId      String                  @unique
-  sku                String?
-  title              String
-  description        String?
-  state              String
-  priceAmount        Decimal
-  priceCurrency      String
-  quantity           Int
-  taxonomyId         String?
-  shopSectionId      String?
-  shippingProfileId  String?
-  returnPolicyId     String?
-  url                String?
-  favorerCount       Int?
-  listingType        String?
-  isTaxable          Boolean?
-  nonTaxable         Boolean?
-  isCustomizable     Boolean?
-  isPersonalizable   Boolean?
-  tags               String[]                @default([])
-  materials          String[]                @default([])
-  itemWeight         Decimal?
-  itemWeightUnit     String?
-  itemLength         Decimal?
-  itemWidth          Decimal?
-  itemHeight         Decimal?
-  itemDimensionsUnit String?
-  processingMinDays  Int?
-  processingMaxDays  Int?
-  inventorySummary   Json?
-  sourceCreatedAt    DateTime?
-  sourceUpdatedAt    DateTime?
-  sourceEndingAt     DateTime?
-  sourceHash         String
-  firstImportedAt    DateTime                @default(now())
-  lastImportedAt     DateTime                @default(now())
-  lastChangedAt      DateTime                @default(now())
-  createdAt          DateTime                @default(now())
-  updatedAt          DateTime                @updatedAt
-  connection         EtsyConnection          @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  syncRun            EtsySyncRun?            @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
-  images             EtsyListingImage[]
-  productLink        EtsyListingProductLink?
-  receiptItems       EtsyReceiptItem[]
+  id                       String                  @id @default(cuid())
+  connectionId             String
+  syncRunId                String?
+  etsyListingId            String                  @unique
+  sku                      String?
+  title                    String
+  description              String?
+  state                    String
+  priceAmount              Decimal
+  priceCurrency            String
+  buyerOriginalPrice       Decimal?
+  buyerDiscountedPrice     Decimal?
+  buyerDiscountAmount      Decimal?
+  buyerDiscountPercentage  Decimal?
+  buyerHasDiscount         Boolean?
+  buyerPriceCurrency       String?
+  discountStartAt          DateTime?
+  discountEndAt            DateTime?
+  manualDiscountPercentage Decimal?
+  quantity                 Int
+  taxonomyId               String?
+  shopSectionId            String?
+  shippingProfileId        String?
+  returnPolicyId           String?
+  url                      String?
+  favorerCount             Int?
+  listingType              String?
+  isTaxable                Boolean?
+  nonTaxable               Boolean?
+  isCustomizable           Boolean?
+  isPersonalizable         Boolean?
+  tags                     String[]                @default([])
+  materials                String[]                @default([])
+  itemWeight               Decimal?
+  itemWeightUnit           String?
+  itemLength               Decimal?
+  itemWidth                Decimal?
+  itemHeight               Decimal?
+  itemDimensionsUnit       String?
+  processingMinDays        Int?
+  processingMaxDays        Int?
+  inventorySummary         Json?
+  sourceCreatedAt          DateTime?
+  sourceUpdatedAt          DateTime?
+  sourceEndingAt           DateTime?
+  sourceHash               String
+  firstImportedAt          DateTime                @default(now())
+  lastImportedAt           DateTime                @default(now())
+  lastChangedAt            DateTime                @default(now())
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  connection               EtsyConnection          @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  syncRun                  EtsySyncRun?            @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
+  images                   EtsyListingImage[]
+  productLink              EtsyListingProductLink?
+  receiptItems             EtsyReceiptItem[]
 
   @@index([connectionId, state])
   @@index([sku])
