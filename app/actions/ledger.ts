@@ -147,6 +147,9 @@ export async function createShippingQuoteAction(formData: FormData) {
       pickup: number,
       remote: number,
       other: number,
+      customsPayer: z.enum(["UNKNOWN", "SELLER", "BUYER", "SHARED"]),
+      customsIncoterm: z.enum(["UNKNOWN", "DAP", "DDU", "DDP", "OTHER"]),
+      includeInSellerProfit: checkbox,
       currency: text,
       quoteDate: date,
       expirationDate: optionalText,
@@ -225,6 +228,9 @@ export async function createCustomsQuoteAction(formData: FormData) {
       clearance: number,
       destinationTax: number,
       other: number,
+      customsPayer: z.enum(["UNKNOWN", "SELLER", "BUYER", "SHARED"]),
+      customsIncoterm: z.enum(["UNKNOWN", "DAP", "DDU", "DDP", "OTHER"]),
+      includeInSellerProfit: checkbox,
       quoteDate: date,
       expirationDate: optionalText,
       source: optionalText,
@@ -251,6 +257,10 @@ export async function createCustomsQuoteAction(formData: FormData) {
       insuranceFee: 0,
       destinationTax: v.destinationTax,
       otherDestinationFee: v.other,
+      customsPayer: v.customsPayer,
+      customsIncoterm: v.customsIncoterm,
+      includeInSellerProfit: v.includeInSellerProfit,
+      estimateStatus: "ESTIMATE_NOT_ACTUAL",
       quoteDate: v.quoteDate,
       effectiveFrom: v.quoteDate,
       expirationDate: v.expirationDate ? new Date(v.expirationDate) : null,
@@ -267,6 +277,164 @@ export async function createCustomsQuoteAction(formData: FormData) {
     },
   });
   revalidatePath("/customs");
+  revalidatePath("/calculator");
+}
+
+export async function createCustomsActualChargeAction(formData: FormData) {
+  const actor = await adminActor("/customs");
+  const v = z
+    .object({
+      customsQuoteId: text,
+      dutyUsd: number,
+      tariffUsd: number,
+      processingUsd: number,
+      brokerageUsd: number,
+      otherUsd: number,
+      payer: z.enum(["UNKNOWN", "SELLER", "BUYER", "SHARED"]),
+      source: text,
+      sourceDate: date,
+      notes: optionalText,
+    })
+    .parse(Object.fromEntries(formData));
+  const totalUsd =
+    v.dutyUsd + v.tariffUsd + v.processingUsd + v.brokerageUsd + v.otherUsd;
+  const row = await prisma.customsActualCharge.create({
+    data: { ...v, totalUsd },
+  });
+  await prisma.auditLog.create({
+    data: {
+      entityType: "CustomsActualCharge",
+      entityId: row.id,
+      action: "ACTUAL_RECORDED",
+      actor,
+    },
+  });
+  revalidatePath("/customs");
+  revalidatePath("/calculator");
+}
+
+export async function saveEtgbCostRecordAction(formData: FormData) {
+  const actor = await adminActor("/customs-etgb");
+  const v = z
+    .object({
+      status: z.enum([
+        "UNKNOWN_PENDING_CONFIRMATION",
+        "INCLUDED_IN_SHIPPING",
+        "NO_SEPARATE_CHARGE",
+        "SEPARATE_FIXED_CHARGE",
+        "SEPARATE_VARIABLE_CHARGE",
+        "MANUAL",
+      ]),
+      estimatedFeeUsd: number,
+      actualFeeUsd: number,
+      includedInShipping: z.enum(["UNKNOWN", "YES", "NO"]),
+      deductFromProfit: checkbox,
+      source: text,
+      sourceDate: date,
+      effectiveFrom: date,
+      notes: optionalText,
+    })
+    .parse(Object.fromEntries(formData));
+  const row = await prisma.etgbCostRecord.create({
+    data: {
+      status: v.status,
+      estimatedFeeUsd:
+        v.status === "UNKNOWN_PENDING_CONFIRMATION" ? null : v.estimatedFeeUsd,
+      actualFeeUsd: v.actualFeeUsd > 0 ? v.actualFeeUsd : null,
+      includedInShipping:
+        v.includedInShipping === "UNKNOWN"
+          ? null
+          : v.includedInShipping === "YES",
+      deductFromProfit: v.deductFromProfit,
+      source: v.source,
+      sourceDate: v.sourceDate,
+      effectiveFrom: v.effectiveFrom,
+      notes: v.notes,
+    },
+  });
+  await prisma.auditLog.create({
+    data: {
+      entityType: "EtgbCostRecord",
+      entityId: row.id,
+      action: "VERSION_CREATED",
+      actor,
+    },
+  });
+  revalidatePath("/customs-etgb");
+  revalidatePath("/calculator");
+}
+
+export async function createCostAssumptionProfileAction(formData: FormData) {
+  const actor = await adminActor("/settings");
+  const v = z
+    .object({
+      name: text,
+      saleValueUsd: number,
+      productCostUsd: number,
+      packagingTry: number,
+      domesticTransferTry: number,
+      internationalShippingUsd: number,
+      insuranceUsd: number,
+      otherCarrierSurchargeUsd: number,
+      customsEstimateUsd: number,
+      includeCustomsInSellerProfit: checkbox,
+      estimatedEtgbFeeUsd: number,
+      includeEtgbInSellerProfit: checkbox,
+      etsyPlusMonthlyTry: number,
+      companyPackageMonthlyTry: number,
+      source: text,
+      sourceDate: date,
+      effectiveFrom: date,
+      notes: optionalText,
+    })
+    .parse(Object.fromEntries(formData));
+  const row = await prisma.costAssumptionProfile.create({
+    data: {
+      ...v,
+      estimatedEtgbFeeUsd:
+        v.estimatedEtgbFeeUsd > 0 ? v.estimatedEtgbFeeUsd : null,
+      status: "EDITABLE_STARTER",
+    },
+  });
+  await prisma.auditLog.create({
+    data: {
+      entityType: "CostAssumptionProfile",
+      entityId: row.id,
+      action: "VERSION_CREATED",
+      actor,
+    },
+  });
+  revalidatePath("/settings");
+  revalidatePath("/calculator");
+}
+
+export async function reconcileShippingQuoteAction(formData: FormData) {
+  const actor = await adminActor("/shipping");
+  const v = z
+    .object({
+      id: text,
+      actualShippingCost: number,
+      actualCostCurrency: text,
+    })
+    .parse(Object.fromEntries(formData));
+  await prisma.shippingQuote.update({
+    where: { id: v.id },
+    data: {
+      actualShippingCost: v.actualShippingCost,
+      actualCostCurrency: v.actualCostCurrency,
+      reconciledAt: new Date(),
+      estimateStatus: "ACTUAL_RECONCILED",
+    },
+  });
+  await prisma.auditLog.create({
+    data: {
+      entityType: "ShippingQuote",
+      entityId: v.id,
+      action: "ACTUAL_RECONCILED",
+      actor,
+    },
+  });
+  revalidatePath("/shipping");
 }
 export async function duplicateShippingQuoteAction(formData: FormData) {
   const actor = await adminActor("/shipping");
@@ -1367,6 +1535,7 @@ export async function createManualOrderAction(formData: FormData) {
       customsDutyUsd: duty,
       additionalTariffUsd: tariff,
       carrierProcessingFeeUsd: customs?.carrierProcessingFee ?? 0,
+      includeCustomsInSellerProfit: customs?.includeInSellerProfit ?? false,
       monthlyOverheadTry: monthlyOverhead,
       expectedMonthlyOrders: business.expectedMonthlyOrders,
       taxReserveRate: legal.incomeTaxReserveRate,
@@ -1661,13 +1830,32 @@ export async function saveMonthlyOverheadAction(formData: FormData) {
       bankingTry: number,
       officeTry: number,
       otherTry: number,
+      etsyPlusTry: number,
+      allocationMethod: z.enum([
+        "EXPECTED_SALES",
+        "ACTUAL_SALES",
+        "NONE",
+        "MANUAL_PER_ORDER",
+        "REVENUE_WEIGHTED",
+      ]),
+      expectedSales: z.coerce.number().int().positive(),
+      actualSales: z.coerce.number().int().nonnegative(),
+      manualPerOrderTry: number,
       notes: optionalText,
     })
     .parse(Object.fromEntries(formData));
   const row = await prisma.monthlyOverhead.upsert({
     where: { month: v.month },
-    update: v,
-    create: v,
+    update: {
+      ...v,
+      actualSales: v.actualSales || null,
+      manualPerOrderTry: v.manualPerOrderTry || null,
+    },
+    create: {
+      ...v,
+      actualSales: v.actualSales || null,
+      manualPerOrderTry: v.manualPerOrderTry || null,
+    },
   });
   await prisma.auditLog.create({
     data: {
@@ -1732,6 +1920,7 @@ export async function runInventoryGoalAction(formData: FormData) {
         .plus(overhead.bankingTry)
         .plus(overhead.officeTry)
         .plus(overhead.otherTry)
+        .plus(overhead.etsyPlusTry)
     : new Decimal(0);
   const duty =
     customs?.customsDutyAmount ??
@@ -1778,6 +1967,10 @@ export async function runInventoryGoalAction(formData: FormData) {
       customsClearanceFeeUsd: customs?.customsClearanceFee ?? 0,
       destinationFeesUsd:
         customs?.otherDestinationFee.plus(customs.destinationTax) ?? 0,
+      includeCustomsInSellerProfit: customs?.includeInSellerProfit ?? false,
+      overheadAllocationMethod: overhead?.allocationMethod ?? "EXPECTED_SALES",
+      actualMonthlyOrders: overhead?.actualSales ?? 0,
+      manualOverheadPerOrderTry: overhead?.manualPerOrderTry ?? 0,
       usdTryRate: rate,
       offsiteAdAttributed: v.offsiteAds,
     });

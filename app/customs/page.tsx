@@ -1,5 +1,6 @@
 import {
   archiveCustomsQuoteAction,
+  createCustomsActualChargeAction,
   createCustomsQuoteAction,
   duplicateCustomsQuoteAction,
 } from "@/app/actions/ledger";
@@ -9,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 export default async function CustomsPage() {
   await requireAdmin({ redirectTo: "/customs" });
   const quotes = await prisma.customsQuote.findMany({
+    include: { actualCharges: { orderBy: { sourceDate: "desc" }, take: 1 } },
     orderBy: { quoteDate: "desc" },
     take: 100,
   });
@@ -55,15 +57,19 @@ export default async function CustomsPage() {
           {[
             ["originCountry", "Origin", "TR"],
             ["destinationCountry", "Destination", "US"],
-            ["hsCode", "Confirmed HS / HTS code", ""],
-            ["productDescription", "Exact product description", ""],
+            ["hsCode", "HS / HTS code used by estimate", "4202224500"],
+            [
+              "productDescription",
+              "Exact product description",
+              "Handbag with outer surface of cotton textile",
+            ],
             ["countryOfOrigin", "Country of origin", "TR"],
-            ["material", "Materials and composition", ""],
-            ["declaredValue", "Declared customs value", ""],
+            ["material", "Materials and composition", "Cotton textile"],
+            ["declaredValue", "Declared customs value", "149"],
             ["currency", "Currency", "USD"],
-            ["dutyRate", "Confirmed duty %", "0"],
-            ["tariffRate", "Confirmed additional tariff %", "0"],
-            ["processing", "Quoted carrier processing", "0"],
+            ["dutyRate", "Estimated duty %", "6.3"],
+            ["tariffRate", "Estimated additional tariff %", "10"],
+            ["processing", "Estimated processing fee", "4.5"],
             ["brokerage", "Brokerage", "0"],
             ["clearance", "Clearance", "0"],
             ["destinationTax", "Destination tax", "0"],
@@ -95,6 +101,37 @@ export default async function CustomsPage() {
             </label>
           ))}
           <label className="text-xs text-stone-500">
+            Assumed customs payer
+            <select
+              className="field mt-1"
+              name="customsPayer"
+              defaultValue="UNKNOWN"
+            >
+              <option>UNKNOWN</option>
+              <option>SELLER</option>
+              <option>BUYER</option>
+              <option>SHARED</option>
+            </select>
+          </label>
+          <label className="text-xs text-stone-500">
+            Incoterm
+            <select
+              className="field mt-1"
+              name="customsIncoterm"
+              defaultValue="UNKNOWN"
+            >
+              <option>UNKNOWN</option>
+              <option>DAP</option>
+              <option>DDU</option>
+              <option>DDP</option>
+              <option>OTHER</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="includeInSellerProfit" /> Deduct
+            estimate from seller profit
+          </label>
+          <label className="text-xs text-stone-500">
             Quote date
             <input
               className="field mt-1"
@@ -109,7 +146,12 @@ export default async function CustomsPage() {
           </label>
           <label className="text-xs text-stone-500">
             Dated source URL or quote reference
-            <input className="field mt-1" name="source" required />
+            <input
+              className="field mt-1"
+              name="source"
+              defaultValue="ShipEntegra US customs calculator"
+              required
+            />
           </label>
           <label className="text-xs text-stone-500">
             Notes
@@ -117,6 +159,76 @@ export default async function CustomsPage() {
           </label>
           <button className="rounded-xl bg-jade px-4 py-2 text-sm font-medium text-white">
             Save quote
+          </button>
+        </form>
+      </section>
+      <section className="card p-5">
+        <h2 className="font-semibold">Record actual customs charge</h2>
+        <p className="mt-1 text-xs text-stone-500">
+          Actual charges are stored separately and never overwrite the estimate.
+        </p>
+        <form
+          action={createCustomsActualChargeAction}
+          className="mt-4 grid gap-3 md:grid-cols-4"
+        >
+          <label className="text-xs text-stone-500">
+            Estimate snapshot
+            <select className="field mt-1" name="customsQuoteId" required>
+              {quotes.map((q) => (
+                <option key={q.id} value={q.id}>
+                  {q.destinationCountry} · {q.hsCode} ·{" "}
+                  {q.declaredValue.toFixed(2)} USD
+                </option>
+              ))}
+            </select>
+          </label>
+          {[
+            ["dutyUsd", "Actual duty USD"],
+            ["tariffUsd", "Actual tariff USD"],
+            ["processingUsd", "Actual processing USD"],
+            ["brokerageUsd", "Actual brokerage USD"],
+            ["otherUsd", "Actual other USD"],
+          ].map(([name, label]) => (
+            <label className="text-xs text-stone-500" key={name}>
+              {label}
+              <input
+                className="field mt-1"
+                name={name}
+                type="number"
+                min="0"
+                step="0.01"
+                defaultValue="0"
+              />
+            </label>
+          ))}
+          <label className="text-xs text-stone-500">
+            Actual payer
+            <select className="field mt-1" name="payer">
+              <option>UNKNOWN</option>
+              <option>SELLER</option>
+              <option>BUYER</option>
+              <option>SHARED</option>
+            </select>
+          </label>
+          <label className="text-xs text-stone-500">
+            Charge date
+            <input
+              className="field mt-1"
+              name="sourceDate"
+              type="date"
+              required
+            />
+          </label>
+          <label className="text-xs text-stone-500">
+            Source / document reference
+            <input className="field mt-1" name="source" required />
+          </label>
+          <label className="text-xs text-stone-500">
+            Notes
+            <input className="field mt-1" name="notes" />
+          </label>
+          <button className="rounded-xl bg-jade px-4 py-2 text-sm text-white">
+            Save actual charge
           </button>
         </form>
       </section>
@@ -131,6 +243,8 @@ export default async function CustomsPage() {
               <th>Tariff</th>
               <th>Total</th>
               <th>Status</th>
+              <th>Payer / incoterm</th>
+              <th>Actual / variance</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -149,6 +263,7 @@ export default async function CustomsPage() {
                 .plus(q.customsClearanceFee)
                 .plus(q.destinationTax)
                 .plus(q.otherDestinationFee);
+              const actual = q.actualCharges[0];
               return (
                 <tr className="border-b" key={q.id}>
                   <td className="p-4 font-medium">
@@ -165,6 +280,18 @@ export default async function CustomsPage() {
                     {q.expirationDate && q.expirationDate < new Date()
                       ? "Expired"
                       : "Current"}
+                  </td>
+                  <td>
+                    {q.customsPayer} / {q.customsIncoterm}
+                    <br />
+                    <span className="text-xs text-stone-500">
+                      {q.includeInSellerProfit ? "Deducted" : "Exposure only"}
+                    </span>
+                  </td>
+                  <td>
+                    {actual
+                      ? `${actual.totalUsd.toFixed(2)} / ${actual.totalUsd.minus(total).toFixed(2)}`
+                      : "Not recorded"}
                   </td>
                   <td>
                     <div className="flex gap-1">

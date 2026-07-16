@@ -200,12 +200,17 @@ model ShippingQuote {
   transitDaysMin     Int?
   transitDaysMax     Int?
   documents          StoredDocument[]
+  costCategory       String           @default("INTERNATIONAL_TRANSPORT")
+  estimateStatus     String           @default("ESTIMATE")
+  actualShippingCost Decimal?
+  actualCostCurrency String?
+  reconciledAt       DateTime?
 
   @@index([destinationCountry, quoteDate])
 }
 
 model CustomsQuote {
-  id                     String           @id @default(cuid())
+  id                     String                @id @default(cuid())
   originCountry          String
   destinationCountry     String
   hsCode                 String
@@ -226,14 +231,19 @@ model CustomsQuote {
   expirationDate         DateTime?
   source                 String?
   notes                  String?
-  createdAt              DateTime         @default(now())
-  updatedAt              DateTime         @updatedAt
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
   orders                 Order[]
   productMaterial        String?
   productCategory        String?
-  destinationTax         Decimal          @default(0)
+  destinationTax         Decimal               @default(0)
   effectiveFrom          DateTime?
   documents              StoredDocument[]
+  customsPayer           CustomsPayer          @default(UNKNOWN)
+  customsIncoterm        CustomsIncoterm       @default(UNKNOWN)
+  includeInSellerProfit  Boolean               @default(false)
+  estimateStatus         String                @default("ESTIMATE_NOT_ACTUAL")
+  actualCharges          CustomsActualCharge[]
 
   @@index([destinationCountry, hsCode, quoteDate])
 }
@@ -390,17 +400,115 @@ model ScenarioResult {
 }
 
 model MonthlyOverhead {
-  id                String   @id @default(cuid())
-  month             DateTime @unique
+  id                String                   @id @default(cuid())
+  month             DateTime                 @unique
   accountantTry     Decimal
   socialSecurityTry Decimal
   softwareTry       Decimal
   bankingTry        Decimal
   officeTry         Decimal
   otherTry          Decimal
+  etsyPlusTry       Decimal                  @default(0)
+  allocationMethod  OverheadAllocationMethod @default(EXPECTED_SALES)
+  expectedSales     Int                      @default(10)
+  actualSales       Int?
+  manualPerOrderTry Decimal?
   notes             String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+}
+
+model CostAssumptionProfile {
+  id                           String    @id @default(cuid())
+  name                         String
+  saleValueUsd                 Decimal
+  productCostUsd               Decimal
+  packagingTry                 Decimal
+  domesticTransferTry          Decimal   @default(0)
+  internationalShippingUsd     Decimal
+  insuranceUsd                 Decimal   @default(0)
+  otherCarrierSurchargeUsd     Decimal   @default(0)
+  customsEstimateUsd           Decimal
+  includeCustomsInSellerProfit Boolean   @default(false)
+  estimatedEtgbFeeUsd          Decimal?
+  includeEtgbInSellerProfit    Boolean   @default(false)
+  etsyPlusMonthlyTry           Decimal   @default(500)
+  companyPackageMonthlyTry     Decimal   @default(4500)
+  source                       String
+  sourceDate                   DateTime
+  currency                     String    @default("USD")
+  exchangeRate                 Decimal?
+  effectiveFrom                DateTime
+  effectiveTo                  DateTime?
+  status                       String    @default("EDITABLE_STARTER")
+  notes                        String?
+  createdAt                    DateTime  @default(now())
+  updatedAt                    DateTime  @updatedAt
+
+  @@unique([name, effectiveFrom])
+  @@index([effectiveFrom, effectiveTo])
+}
+
+model CustomsActualCharge {
+  id             String       @id @default(cuid())
+  customsQuoteId String
+  dutyUsd        Decimal      @default(0)
+  tariffUsd      Decimal      @default(0)
+  processingUsd  Decimal      @default(0)
+  brokerageUsd   Decimal      @default(0)
+  otherUsd       Decimal      @default(0)
+  totalUsd       Decimal
+  payer          CustomsPayer @default(UNKNOWN)
+  source         String
+  sourceDate     DateTime
+  currency       String       @default("USD")
+  exchangeRate   Decimal?
+  notes          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  customsQuote   CustomsQuote @relation(fields: [customsQuoteId], references: [id], onDelete: Restrict)
+
+  @@index([customsQuoteId, sourceDate])
+}
+
+model EtgbCostRecord {
+  id                 String         @id @default(cuid())
+  status             EtgbCostStatus @default(UNKNOWN_PENDING_CONFIRMATION)
+  estimatedFeeUsd    Decimal?
+  actualFeeUsd       Decimal?
+  includedInShipping Boolean?
+  deductFromProfit   Boolean        @default(false)
+  source             String
+  sourceDate         DateTime
+  currency           String         @default("USD")
+  exchangeRate       Decimal?
+  effectiveFrom      DateTime
+  effectiveTo        DateTime?
+  notes              String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([effectiveFrom, effectiveTo])
+}
+
+model ExternalCalculatorComparison {
+  id                       String    @id @default(cuid())
+  provider                 String
+  marketplaceCommissionUsd Decimal
+  paymentCommissionUsd     Decimal
+  otherCommissionUsd       Decimal
+  source                   String
+  sourceDate               DateTime
+  currency                 String    @default("USD")
+  exchangeRate             Decimal?
+  effectiveFrom            DateTime
+  effectiveTo              DateTime?
+  status                   String    @default("COMPARISON_ONLY")
+  notes                    String?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  @@index([provider, effectiveFrom])
 }
 
 model AppSetting {
@@ -1316,6 +1424,38 @@ enum CostSource {
   SHIPENTEGRA_ACTUAL
   MANUAL
   UNKNOWN
+}
+
+enum CustomsPayer {
+  UNKNOWN
+  SELLER
+  BUYER
+  SHARED
+}
+
+enum CustomsIncoterm {
+  UNKNOWN
+  DAP
+  DDU
+  DDP
+  OTHER
+}
+
+enum EtgbCostStatus {
+  UNKNOWN_PENDING_CONFIRMATION
+  INCLUDED_IN_SHIPPING
+  NO_SEPARATE_CHARGE
+  SEPARATE_FIXED_CHARGE
+  SEPARATE_VARIABLE_CHARGE
+  MANUAL
+}
+
+enum OverheadAllocationMethod {
+  EXPECTED_SALES
+  ACTUAL_SALES
+  NONE
+  MANUAL_PER_ORDER
+  REVENUE_WEIGHTED
 }
 
 model BusinessProfile {

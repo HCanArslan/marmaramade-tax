@@ -29,10 +29,12 @@ describe("planning usability", () => {
     expect(actions).toContain("https://www.etsy.com/legal/fees/");
   });
 
-  it("does not prefill a guessed product classification or customs rate", async () => {
+  it("labels the provided customs starter as an editable estimate", async () => {
     const customs = await source("app/customs/page.tsx");
-    expect(customs).not.toContain("4202224500");
-    expect(customs).not.toContain('["dutyRate", "Duty %", "6.3"]');
+    expect(customs).toContain("4202224500");
+    expect(customs).toContain('["dutyRate", "Estimated duty %", "6.3"]');
+    expect(customs).toContain("ShipEntegra US customs calculator");
+    expect(customs).toContain('name="includeInSellerProfit"');
     expect(customs).toContain("Open official GTIP search");
   });
 
@@ -91,8 +93,9 @@ describe("planning usability", () => {
   });
 
   it("never presents a zero-input monthly scenario as reliable profit", async () => {
-    const [calculator, shipping, actions] = await Promise.all([
+    const [calculator, calculatorPage, shipping, actions] = await Promise.all([
       source("components/calculator-workspace.tsx"),
+      source("app/calculator/page.tsx"),
       source("app/shipping/page.tsx"),
       source("app/actions/ledger.ts"),
     ]);
@@ -100,10 +103,15 @@ describe("planning usability", () => {
       "Profit is preliminary because required costs are zero",
     );
     expect(calculator).toContain("Scenario deduction audit");
-    expect(calculator).toContain("Shipping / ETGB service");
+    expect(calculator).toContain("International shipping");
     expect(calculator).toContain("customs / destination charges");
     expect(calculator).toContain("tax reserve");
+    expect(calculator).toContain("Open source page");
+    expect(calculatorPage).toContain("Latest saved fallback");
+    expect(calculatorPage).toContain("businessProfile");
+    expect(calculatorPage).toContain('contains: "example"');
     expect(shipping).toContain("Use for planning");
+    expect(shipping).toContain("Automatic Calculator fallback");
     expect(actions).toContain("setPlanningDefaultShippingQuoteAction");
   });
 

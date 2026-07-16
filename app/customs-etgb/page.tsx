@@ -3,6 +3,7 @@ import {
   createMicroExportCaseAction,
   createTariffVersionAction,
 } from "@/app/actions/operations";
+import { saveEtgbCostRecordAction } from "@/app/actions/ledger";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { prisma } from "@/lib/prisma";
 
@@ -12,19 +13,24 @@ const guideUrl =
 
 export default async function CustomsEtgbPage() {
   await requireAdmin({ redirectTo: "/customs-etgb" });
-  const [profiles, tariffs, cases, orders, legalProfile] = await Promise.all([
-    prisma.customsProfile.findMany({ orderBy: { effectiveFrom: "desc" } }),
-    prisma.tariffVersion.findMany({ orderBy: { effectiveFrom: "desc" } }),
-    prisma.microExportCase.findMany({ orderBy: { createdAt: "desc" } }),
-    prisma.order.findMany({
-      where: { destinationCountry: { not: "TR" } },
-      orderBy: { orderDate: "desc" },
-      take: 100,
-    }),
-    prisma.legalOperatingProfile.findFirst({
-      orderBy: { effectiveFrom: "desc" },
-    }),
-  ]);
+  const [profiles, tariffs, cases, orders, legalProfile, etgbCosts] =
+    await Promise.all([
+      prisma.customsProfile.findMany({ orderBy: { effectiveFrom: "desc" } }),
+      prisma.tariffVersion.findMany({ orderBy: { effectiveFrom: "desc" } }),
+      prisma.microExportCase.findMany({ orderBy: { createdAt: "desc" } }),
+      prisma.order.findMany({
+        where: { destinationCountry: { not: "TR" } },
+        orderBy: { orderDate: "desc" },
+        take: 100,
+      }),
+      prisma.legalOperatingProfile.findFirst({
+        orderBy: { effectiveFrom: "desc" },
+      }),
+      prisma.etgbCostRecord.findMany({
+        orderBy: { effectiveFrom: "desc" },
+        take: 25,
+      }),
+    ]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -58,6 +64,101 @@ export default async function CustomsEtgbPage() {
         </a>{" "}
         and confirm the shipment with your carrier or customs professional.
       </div>
+
+      <section className="card p-5">
+        <h2 className="font-semibold">ETGB service-cost status</h2>
+        <p className="mt-1 text-sm text-stone-500">
+          ETGB is not assumed to be free. Keep the status unknown until a dated
+          carrier invoice or written quote confirms whether it is included in
+          shipping or charged separately. Unknown costs are not deducted.
+        </p>
+        <form
+          action={saveEtgbCostRecordAction}
+          className="mt-4 grid gap-3 md:grid-cols-4"
+        >
+          <label className="text-xs text-stone-500">
+            Confirmed status
+            <select className="field mt-1" name="status">
+              <option value="UNKNOWN_PENDING_CONFIRMATION">
+                Unknown — pending confirmation
+              </option>
+              <option value="INCLUDED_IN_SHIPPING">Included in shipping</option>
+              <option value="NO_SEPARATE_CHARGE">No separate charge</option>
+              <option value="SEPARATE_FIXED_CHARGE">
+                Separate fixed charge
+              </option>
+              <option value="SEPARATE_VARIABLE_CHARGE">
+                Separate variable charge
+              </option>
+              <option value="MANUAL">Manual confirmed amount</option>
+            </select>
+          </label>
+          <Field
+            label="Estimated ETGB fee USD (0 means not entered)"
+            name="estimatedFeeUsd"
+            type="number"
+            value="0"
+          />
+          <Field
+            label="Actual ETGB fee USD (0 means not entered)"
+            name="actualFeeUsd"
+            type="number"
+            value="0"
+          />
+          <label className="text-xs text-stone-500">
+            Included in shipping?
+            <select className="field mt-1" name="includedInShipping">
+              <option value="UNKNOWN">Unknown</option>
+              <option value="YES">Yes</option>
+              <option value="NO">No</option>
+            </select>
+          </label>
+          <Field
+            label="Evidence source"
+            name="source"
+            value="Pending carrier confirmation"
+          />
+          <Field
+            label="Source date"
+            name="sourceDate"
+            type="date"
+            value={today}
+          />
+          <Field
+            label="Effective from"
+            name="effectiveFrom"
+            type="date"
+            value={today}
+          />
+          <Field label="Notes (optional)" name="notes" required={false} />
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="deductFromProfit" />
+            Deduct confirmed ETGB cost from seller profit
+          </label>
+          <SaveButton label="Save ETGB cost version" />
+        </form>
+        <div className="mt-5 grid gap-2 md:grid-cols-2">
+          {etgbCosts.map((cost) => (
+            <div className="rounded-xl border p-3 text-sm" key={cost.id}>
+              <p className="font-medium">{cost.status.replaceAll("_", " ")}</p>
+              <p className="mt-1 text-stone-500">
+                Estimate {cost.estimatedFeeUsd?.toFixed(2) ?? "not entered"} USD
+                · actual {cost.actualFeeUsd?.toFixed(2) ?? "not entered"} USD ·
+                included{" "}
+                {cost.includedInShipping === null
+                  ? "unknown"
+                  : cost.includedInShipping
+                    ? "yes"
+                    : "no"}
+              </p>
+              <p className="mt-1 text-xs text-stone-400">
+                {cost.source} · {cost.sourceDate.toLocaleDateString("en-GB")} ·{" "}
+                {cost.deductFromProfit ? "deducted" : "not deducted"}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <section className="grid gap-5 xl:grid-cols-3">
         <Box title="1. Route profile">

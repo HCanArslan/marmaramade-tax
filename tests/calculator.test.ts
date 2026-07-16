@@ -117,6 +117,86 @@ describe("MarmaraMade calculation engine", () => {
     expect(q.tariff.toNumber()).toBe(15);
     expect(q.total.toNumber()).toBe(28.95);
   });
+  it("verifies the editable 149 USD customs estimate as 28.79 USD", () => {
+    const q = customsTotal({
+      declaredValue: 149,
+      dutyRate: 6.3,
+      tariffRate: 10,
+      processingFee: 4.5,
+    });
+    expect(q.duty.toFixed(2)).toBe("9.39");
+    expect(q.tariff.toFixed(2)).toBe("14.90");
+    expect(q.total.toFixed(2)).toBe("28.79");
+  });
+  it("keeps customs visible but out of profit while payer is unknown", () => {
+    const result = calc({
+      internationalShippingUsd: "50.83",
+      customsDutyUsd: "9.39",
+      additionalTariffUsd: "14.90",
+      carrierProcessingFeeUsd: "4.50",
+      includeCustomsInSellerProfit: false,
+    });
+    expect(result.totals.internationalShippingUsd.toFixed(2)).toBe("50.83");
+    expect(result.totals.customsExposureUsd.toFixed(2)).toBe("28.79");
+    expect(result.totals.customsAndTariffUsd.toFixed(2)).toBe("0.00");
+  });
+  it("deducts 79.62 USD logistics when the seller pays customs", () => {
+    const result = calc({
+      internationalShippingUsd: "50.83",
+      customsDutyUsd: "9.39",
+      additionalTariffUsd: "14.90",
+      carrierProcessingFeeUsd: "4.50",
+      includeCustomsInSellerProfit: true,
+    });
+    expect(
+      result.totals.internationalShippingUsd
+        .plus(result.totals.customsAndTariffUsd)
+        .toFixed(2),
+    ).toBe("79.62");
+  });
+  it("does not invent an ETGB deduction while its cost is unknown", () => {
+    const unknown = calc({
+      etgbCostUsd: "0",
+      includeEtgbInSellerProfit: false,
+    });
+    expect(unknown.totals.etgbCostUsd.toFixed(2)).toBe("0.00");
+    expect(unknown.warnings.some((warning) => warning.includes("ETGB"))).toBe(
+      true,
+    );
+  });
+  it("deducts a confirmed ETGB charge only when explicitly enabled", () => {
+    const excluded = calc({
+      etgbCostUsd: "8",
+      includeEtgbInSellerProfit: false,
+    });
+    const included = calc({
+      etgbCostUsd: "8",
+      includeEtgbInSellerProfit: true,
+    });
+    expect(excluded.totals.etgbCostUsd.toNumber()).toBe(0);
+    expect(included.totals.etgbCostUsd.toNumber()).toBe(8);
+    expect(
+      excluded.totals.estimatedAfterReserveProfit
+        .minus(included.totals.estimatedAfterReserveProfit)
+        .toNumber(),
+    ).toBe(8);
+  });
+  it("allocates the 4,500 TRY company package plus 500 TRY Etsy Plus", () => {
+    const expected = calc({
+      monthlyOverheadTry: "5000",
+      expectedMonthlyOrders: "10",
+      overheadAllocationMethod: "EXPECTED_SALES",
+      usdTryRate: "50",
+    });
+    const actual = calc({
+      monthlyOverheadTry: "5000",
+      actualMonthlyOrders: "5",
+      overheadAllocationMethod: "ACTUAL_SALES",
+      usdTryRate: "50",
+    });
+    expect(expected.totals.allocatedBusinessOverheadUsd.toNumber()).toBe(10);
+    expect(actual.totals.allocatedBusinessOverheadUsd.toNumber()).toBe(20);
+  });
   it("preserves a supplied 34.21 USD shipping quote", () =>
     expect(
       n(

@@ -14,10 +14,14 @@ export default async function CalculatorPage() {
     products,
     savedRate,
     overhead,
+    businessProfile,
     legalProfile,
     shipping,
     customs,
     feeProfile,
+    assumptionProfile,
+    etgbCost,
+    externalComparison,
   ] = await Promise.all([
     prisma.product.findMany({
       where: { active: true, etsyListingLinks: { some: {} } },
@@ -32,27 +36,94 @@ export default async function CalculatorPage() {
       orderBy: { capturedAt: "desc" },
     }),
     prisma.monthlyOverhead.findFirst({ orderBy: { month: "desc" } }),
+    prisma.businessProfileVersion.findFirst({
+      where: {
+        effectiveFrom: { lte: now },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
+      },
+      orderBy: { effectiveFrom: "desc" },
+    }),
     prisma.legalOperatingProfile.findFirst({
       orderBy: { effectiveFrom: "desc" },
     }),
     prisma.shippingQuote.findFirst({
       where: {
-        planningDefault: true,
         shippingCurrency: "USD",
         OR: [{ expirationDate: null }, { expirationDate: { gte: now } }],
+        AND: [
+          {
+            OR: [
+              { source: null },
+              {
+                source: {
+                  not: { contains: "example" },
+                },
+              },
+            ],
+          },
+          {
+            OR: [
+              { notes: null },
+              {
+                notes: {
+                  not: { contains: "example" },
+                },
+              },
+            ],
+          },
+        ],
       },
-      orderBy: { quoteDate: "desc" },
+      orderBy: [{ planningDefault: "desc" }, { quoteDate: "desc" }],
     }),
     prisma.customsQuote.findFirst({
       where: {
         declaredValueCurrency: "USD",
         OR: [{ expirationDate: null }, { expirationDate: { gte: now } }],
+        AND: [
+          {
+            OR: [
+              { source: null },
+              {
+                source: {
+                  not: { contains: "example" },
+                },
+              },
+            ],
+          },
+          {
+            OR: [
+              { notes: null },
+              {
+                notes: {
+                  not: { contains: "example" },
+                },
+              },
+            ],
+          },
+        ],
       },
       orderBy: { quoteDate: "desc" },
     }),
     prisma.feeProfile.findFirst({
       where: { marketplace: "Etsy", country: "TR" },
       include: { rules: true },
+      orderBy: { effectiveFrom: "desc" },
+    }),
+    prisma.costAssumptionProfile.findFirst({
+      where: {
+        effectiveFrom: { lte: now },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
+      },
+      orderBy: { effectiveFrom: "desc" },
+    }),
+    prisma.etgbCostRecord.findFirst({
+      where: {
+        effectiveFrom: { lte: now },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
+      },
+      orderBy: { effectiveFrom: "desc" },
+    }),
+    prisma.externalCalculatorComparison.findFirst({
       orderBy: { effectiveFrom: "desc" },
     }),
   ]);
@@ -106,7 +177,15 @@ export default async function CalculatorPage() {
         .plus(overhead.bankingTry.toString())
         .plus(overhead.officeTry.toString())
         .plus(overhead.otherTry.toString())
-    : new Decimal(0);
+        .plus(overhead.etsyPlusTry.toString())
+    : businessProfile
+      ? businessProfile.accountantMonthlyTry
+          .plus(businessProfile.socialSecurityMonthlyTry)
+          .plus(businessProfile.invoicingSoftwareMonthlyTry)
+          .plus(businessProfile.bankingMonthlyTry)
+          .plus(businessProfile.officeMonthlyTry)
+          .plus(businessProfile.otherMonthlyBusinessCostsTry)
+      : new Decimal(0);
   const customsDuty = customs
     ? (customs.customsDutyAmount ??
       customs.declaredValue.mul(customs.customsDutyRate).div(100))
@@ -120,10 +199,50 @@ export default async function CalculatorPage() {
     <CalculatorWorkspace
       products={presets}
       exchangeRate={exchangeRate}
+      externalComparison={
+        externalComparison
+          ? {
+              provider: externalComparison.provider,
+              marketplaceCommissionUsd:
+                externalComparison.marketplaceCommissionUsd.toString(),
+              paymentCommissionUsd:
+                externalComparison.paymentCommissionUsd.toString(),
+              otherCommissionUsd:
+                externalComparison.otherCommissionUsd.toString(),
+            }
+          : null
+      }
+      planningSources={{
+        products: "Latest saved cost version for each product",
+        shipping: shipping
+          ? `${shipping.planningDefault ? "Planning default" : "Latest saved fallback"}: ${shipping.carrier} · ${shipping.serviceName} · ${shipping.destinationCountry} · ${shipping.quoteDate.toLocaleDateString("en-GB")}`
+          : "No current non-example USD shipping quote",
+        customs: customs
+          ? `Latest current quote: ${customs.destinationCountry} · ${customs.hsCode} · ${customs.quoteDate.toLocaleDateString("en-GB")}`
+          : "No current non-example USD customs quote",
+        overhead: overhead
+          ? `Monthly overhead saved for ${overhead.month.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}`
+          : businessProfile
+            ? `Fallback from business profile: ${businessProfile.name}`
+            : "No monthly overhead or current business profile",
+        fees: feeProfile
+          ? `Etsy fee profile: ${feeProfile.name}`
+          : "Built-in Etsy planning assumptions; save the official profile",
+        tax: legalProfile
+          ? `Legal profile: ${legalProfile.name} · ${legalProfile.incomeTaxReserveRate.toString()}% planning reserve`
+          : "No current legal operating profile",
+        reserves:
+          "Return, damage, exchange-loss and domestic-logistics assumptions from Quick calculator",
+      }}
       planningDefaults={{
         ...feeDefaults,
         monthlyOverheadTry: monthlyOverhead.toString(),
-        expectedMonthlyOrders: String(legalProfile?.expectedMonthlyOrders || 1),
+        expectedMonthlyOrders: String(
+          overhead?.expectedSales ||
+            legalProfile?.expectedMonthlyOrders ||
+            businessProfile?.expectedMonthlyOrders ||
+            1,
+        ),
         taxReserveRate: legalProfile?.incomeTaxReserveRate.toString() ?? "0",
         businessStatus:
           legalProfile?.operatingMode === "SOLE_PROPRIETORSHIP"
@@ -144,6 +263,24 @@ export default async function CalculatorPage() {
         destinationFeesUsd: customs
           ? customs.otherDestinationFee.plus(customs.destinationTax).toString()
           : "0",
+        includeCustomsInSellerProfit:
+          customs?.includeInSellerProfit ??
+          assumptionProfile?.includeCustomsInSellerProfit ??
+          false,
+        etgbCostUsd:
+          etgbCost?.actualFeeUsd?.toString() ??
+          etgbCost?.estimatedFeeUsd?.toString() ??
+          assumptionProfile?.estimatedEtgbFeeUsd?.toString() ??
+          "0",
+        includeEtgbInSellerProfit:
+          etgbCost?.deductFromProfit ??
+          assumptionProfile?.includeEtgbInSellerProfit ??
+          false,
+        overheadAllocationMethod:
+          overhead?.allocationMethod ?? "EXPECTED_SALES",
+        actualMonthlyOrders: String(overhead?.actualSales ?? 0),
+        manualOverheadPerOrderTry:
+          overhead?.manualPerOrderTry?.toString() ?? "0",
       }}
     />
   );

@@ -1,7 +1,15 @@
 import type { DecimalInput } from "./money";
 
-export type BusinessStatus = "INDIVIDUAL_UNREGISTERED" | "SOLE_PROPRIETORSHIP" | "LIMITED_COMPANY";
-export type VatTreatment = "CHARGED_BY_ETSY" | "NOT_CHARGED_BY_ETSY" | "ACCOUNTANT_MANAGED" | "MANUAL";
+export type BusinessStatus =
+  "INDIVIDUAL_UNREGISTERED" | "SOLE_PROPRIETORSHIP" | "LIMITED_COMPANY";
+export type VatTreatment =
+  "CHARGED_BY_ETSY" | "NOT_CHARGED_BY_ETSY" | "ACCOUNTANT_MANAGED" | "MANUAL";
+export type OverheadAllocationMethod =
+  | "EXPECTED_SALES"
+  | "ACTUAL_SALES"
+  | "NONE"
+  | "MANUAL_PER_ORDER"
+  | "REVENUE_WEIGHTED";
 
 export interface CalculatorInput {
   itemSubtotalUsd: DecimalInput;
@@ -44,8 +52,14 @@ export interface CalculatorInput {
   brokerageFeeUsd: DecimalInput;
   customsClearanceFeeUsd: DecimalInput;
   destinationFeesUsd: DecimalInput;
+  includeCustomsInSellerProfit: boolean;
+  etgbCostUsd: DecimalInput;
+  includeEtgbInSellerProfit: boolean;
   monthlyOverheadTry: DecimalInput;
   expectedMonthlyOrders: DecimalInput;
+  actualMonthlyOrders: DecimalInput;
+  manualOverheadPerOrderTry: DecimalInput;
+  overheadAllocationMethod: OverheadAllocationMethod;
   returnReserveRate: DecimalInput;
   damageReserveRate: DecimalInput;
   exchangeLossReserveRate: DecimalInput;

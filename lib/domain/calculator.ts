@@ -78,13 +78,17 @@ export function calculate(input: CalculatorInput): CalculationResult {
   const shippingUsd = sum([input.internationalShippingUsd, input.shippingInsuranceUsd]);
   addUsd("International shipping", "Logistics", input.internationalShippingUsd, "Saved shipping quote");
   if (d(input.shippingInsuranceUsd).gt(0)) addUsd("Shipping insurance", "Logistics", input.shippingInsuranceUsd, "Saved shipping quote");
-  const customsUsd = sum([input.customsDutyUsd, input.additionalTariffUsd, input.carrierProcessingFeeUsd, input.brokerageFeeUsd, input.customsClearanceFeeUsd, input.destinationFeesUsd]);
+  const customsExposureUsd = sum([input.customsDutyUsd, input.additionalTariffUsd, input.carrierProcessingFeeUsd, input.brokerageFeeUsd, input.customsClearanceFeeUsd, input.destinationFeesUsd]);
+  const customsUsd = input.includeCustomsInSellerProfit ? customsExposureUsd : d(0);
+  const etgbUsd = input.includeEtgbInSellerProfit ? d(input.etgbCostUsd) : d(0);
+  addUsd("ETGB / export processing", "Export", etgbUsd, input.includeEtgbInSellerProfit ? "Confirmed ETGB deduction" : "Unknown or excluded from seller profit");
   addUsd("Customs duty", "Customs", input.customsDutyUsd, "Dated customs quote");
   addUsd("Additional tariff", "Customs", input.additionalTariffUsd, "Dated customs quote");
   addUsd("Carrier customs-processing charge", "Customs", input.carrierProcessingFeeUsd, "Destination carrier charge; not a ShipEntegra service");
   if (d(input.brokerageFeeUsd).gt(0)) addUsd("Brokerage", "Customs", input.brokerageFeeUsd, "Dated customs quote");
-  const overheadTry = d(input.expectedMonthlyOrders).gt(0) ? d(input.monthlyOverheadTry).div(input.expectedMonthlyOrders) : d(0);
-  addTry("Allocated business overhead", "Business overhead", overheadTry, "Monthly overhead ÷ expected monthly orders", input.monthlyOverheadTry, input.expectedMonthlyOrders);
+  const overheadDivisor = input.overheadAllocationMethod === "ACTUAL_SALES" ? d(input.actualMonthlyOrders) : d(input.expectedMonthlyOrders);
+  const overheadTry = input.overheadAllocationMethod === "NONE" ? d(0) : input.overheadAllocationMethod === "MANUAL_PER_ORDER" ? d(input.manualOverheadPerOrderTry) : overheadDivisor.gt(0) ? d(input.monthlyOverheadTry).div(overheadDivisor) : d(0);
+  addTry("Allocated business overhead", "Business overhead", overheadTry, `${input.overheadAllocationMethod}: monthly overhead allocation`, input.monthlyOverheadTry, overheadDivisor);
   const returnReserve = pct(grossRevenue, input.returnReserveRate);
   const damageReserve = pct(grossRevenue, input.damageReserveRate);
   const exchangeLoss = pct(grossRevenue, input.exchangeLossReserveRate);
@@ -100,7 +104,7 @@ export function calculate(input: CalculatorInput): CalculationResult {
   const domesticUsd = convert(money(domesticTry, "TRY"), rate, "USD").amount;
   const overheadUsd = convert(money(overheadTry, "TRY"), rate, "USD").amount;
   const advertisingUsd = offsite.plus(input.etsyAdsUsd);
-  const contributionProfit = grossRevenue.minus(etsyFeesUsd).minus(productExLaborUsd).minus(domesticUsd).minus(shippingUsd).minus(customsUsd).minus(returnReserve).minus(damageReserve);
+  const contributionProfit = grossRevenue.minus(etsyFeesUsd).minus(productExLaborUsd).minus(domesticUsd).minus(shippingUsd).minus(etgbUsd).minus(customsUsd).minus(returnReserve).minus(damageReserve);
   const profitAfterLabor = contributionProfit.minus(laborUsd);
   const operatingProfit = profitAfterLabor.minus(overheadUsd);
   const estimatedPreTaxProfit = operatingProfit.minus(exchangeLoss).minus(input.otherOperatingExpensesUsd);
@@ -112,14 +116,22 @@ export function calculate(input: CalculatorInput): CalculationResult {
   const totalCostUsd = grossRevenue.minus(estimatedAfterReserveProfit);
   const margin = (value: Decimal) => grossRevenue.eq(0) ? d(0) : value.div(grossRevenue).mul(100);
   const warnings: string[] = [];
-  if (shippingUsd.gt(0) && customsUsd.eq(0)) warnings.push("DDP shipment has no import costs entered.");
+  if (shippingUsd.gt(0) && customsExposureUsd.eq(0)) warnings.push("Shipping has no customs exposure estimate entered.");
+  if (!input.includeCustomsInSellerProfit && customsExposureUsd.gt(0)) warnings.push("Customs estimate is visible but not deducted because seller-paid customs is not enabled.");
+  if (!input.includeEtgbInSellerProfit) warnings.push("ETGB cost is unknown or not confirmed for deduction.");
+  const revenueAfterEtsyFees = grossRevenue.minus(etsyFeesUsd);
+  const contributionBeforeInternationalLogistics = revenueAfterEtsyFees.minus(productExLaborUsd).minus(laborUsd).minus(domesticUsd);
+  const contributionAfterShipping = contributionBeforeInternationalLogistics.minus(shippingUsd).minus(etgbUsd);
+  const contributionAfterOptionalCustoms = contributionAfterShipping.minus(customsUsd);
+  const profitBeforeMonthlyOverhead = contributionAfterOptionalCustoms;
   if (input.vatTreatment !== "CHARGED_BY_ETSY") warnings.push("Local VAT, reverse-charge, income-tax, invoicing, or accounting obligations may still apply. Enter accountant-confirmed amounts separately.");
   return {
     lines,
     totals: {
       grossRevenue, etsyBaseFees: etsyFeesUsd.minus(vatUsd).minus(convert(money(vatTry, "TRY"), rate, "USD").amount), etsyFeeVatUsd: vatUsd.plus(convert(money(vatTry, "TRY"), rate, "USD").amount),
       totalEtsyFees: etsyFeesUsd, directProductCostUsd: productExLaborUsd.plus(laborUsd), materialCostUsd, laborUsd, packagingCostUsd, additionalDirectCostUsd, domesticLogisticsUsd: domesticUsd,
-      internationalShippingUsd: shippingUsd, customsAndTariffUsd: customsUsd, allocatedBusinessOverheadUsd: overheadUsd, advertisingUsd,
+      internationalShippingUsd: shippingUsd, etgbCostUsd: etgbUsd, customsExposureUsd, customsAndTariffUsd: customsUsd, allocatedBusinessOverheadUsd: overheadUsd, advertisingUsd,
+      revenueAfterEtsyFees, contributionBeforeInternationalLogistics, contributionAfterShipping, contributionAfterOptionalCustoms, profitBeforeMonthlyOverhead,
       contributionProfit, profitAfterLabor, operatingProfit, estimatedPreTaxProfit, taxReserve, estimatedAfterReserveProfit,
       totalCostUsd, totalCostTry: totalCostUsd.mul(rate), estimatedAfterReserveProfitTry: estimatedAfterReserveProfit.mul(rate),
       contributionMargin: margin(contributionProfit), operatingMargin: margin(operatingProfit), afterReserveMargin: margin(estimatedAfterReserveProfit),

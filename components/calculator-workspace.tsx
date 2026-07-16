@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import Decimal from "decimal.js";
 import { AlertTriangle, ChevronDown, Info, RotateCcw } from "lucide-react";
 import { calculate, solvePrice } from "@/lib/domain/calculator";
@@ -38,14 +39,35 @@ interface CalculatorExchangeRate {
   fallback: boolean;
 }
 
+interface PlanningSources {
+  products: string;
+  shipping: string;
+  customs: string;
+  overhead: string;
+  fees: string;
+  tax: string;
+  reserves: string;
+}
+
+interface ExternalComparison {
+  provider: string;
+  marketplaceCommissionUsd: string;
+  paymentCommissionUsd: string;
+  otherCommissionUsd: string;
+}
+
 export function CalculatorWorkspace({
   products,
   exchangeRate,
   planningDefaults,
+  planningSources,
+  externalComparison,
 }: {
   products: CalculatorProductPreset[];
   exchangeRate: CalculatorExchangeRate;
   planningDefaults: Partial<CalculatorInput>;
+  planningSources: PlanningSources;
+  externalComparison: ExternalComparison | null;
 }) {
   const [input, setInput] = useState<CalculatorInput>({
     ...defaultCalculatorInput,
@@ -142,7 +164,7 @@ export function CalculatorWorkspace({
             .plus(calculationInput.shippingInsuranceUsd)
             .eq(0)
         )
-          missing.push("shipping / ETGB service");
+          missing.push("international shipping");
         if (
           new Decimal(calculationInput.customsDutyUsd)
             .plus(calculationInput.additionalTariffUsd)
@@ -196,6 +218,12 @@ export function CalculatorWorkspace({
             customs: totals.customs.plus(
               row.calculation.totals.customsAndTariffUsd.mul(quantity),
             ),
+            customsExposure: totals.customsExposure.plus(
+              row.calculation.totals.customsExposureUsd.mul(quantity),
+            ),
+            etgb: totals.etgb.plus(
+              row.calculation.totals.etgbCostUsd.mul(quantity),
+            ),
             overhead: totals.overhead.plus(
               row.calculation.totals.allocatedBusinessOverheadUsd.mul(quantity),
             ),
@@ -221,6 +249,8 @@ export function CalculatorWorkspace({
           otherDirect: new Decimal(0),
           shipping: new Decimal(0),
           customs: new Decimal(0),
+          customsExposure: new Decimal(0),
+          etgb: new Decimal(0),
           overhead: new Decimal(0),
           tax: new Decimal(0),
           totalCosts: new Decimal(0),
@@ -239,6 +269,7 @@ export function CalculatorWorkspace({
     .minus(planTotals.fees)
     .minus(planTotals.productCosts)
     .minus(planTotals.shipping)
+    .minus(planTotals.etgb)
     .minus(planTotals.customs)
     .minus(planTotals.overhead)
     .minus(planTotals.tax);
@@ -438,6 +469,40 @@ export function CalculatorWorkspace({
                   suffix="ORDERS"
                   onChange={(v) => set("expectedMonthlyOrders", v)}
                 />
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium text-stone-600">
+                    Overhead allocation
+                  </span>
+                  <select
+                    className="field"
+                    value={input.overheadAllocationMethod}
+                    onChange={(event) =>
+                      set("overheadAllocationMethod", event.target.value)
+                    }
+                  >
+                    <option>EXPECTED_SALES</option>
+                    <option>ACTUAL_SALES</option>
+                    <option>NONE</option>
+                    <option>MANUAL_PER_ORDER</option>
+                    <option>REVENUE_WEIGHTED</option>
+                  </select>
+                </label>
+                {input.overheadAllocationMethod === "ACTUAL_SALES" && (
+                  <NumberField
+                    label="Actual completed orders"
+                    value={input.actualMonthlyOrders}
+                    suffix="ORDERS"
+                    onChange={(v) => set("actualMonthlyOrders", v)}
+                  />
+                )}
+                {input.overheadAllocationMethod === "MANUAL_PER_ORDER" && (
+                  <NumberField
+                    label="Manual overhead per order"
+                    value={input.manualOverheadPerOrderTry}
+                    suffix="TRY"
+                    onChange={(v) => set("manualOverheadPerOrderTry", v)}
+                  />
+                )}
                 <NumberField
                   label="Income-tax planning reserve"
                   value={input.taxReserveRate}
@@ -486,6 +551,22 @@ export function CalculatorWorkspace({
                   suffix="TRY"
                   onChange={(v) => set("domesticTransferCostTry", v)}
                 />
+                <NumberField
+                  label="ETGB / export processing"
+                  value={input.etgbCostUsd}
+                  suffix="USD"
+                  onChange={(v) => set("etgbCostUsd", v)}
+                />
+                <Toggle
+                  label="Seller pays customs"
+                  checked={input.includeCustomsInSellerProfit}
+                  onChange={(v) => set("includeCustomsInSellerProfit", v)}
+                />
+                <Toggle
+                  label="Deduct confirmed ETGB cost"
+                  checked={input.includeEtgbInSellerProfit}
+                  onChange={(v) => set("includeEtgbInSellerProfit", v)}
+                />
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                   <span className="pill border-emerald-200 bg-white text-emerald-700">
                     Saved planning inputs
@@ -501,7 +582,10 @@ export function CalculatorWorkspace({
               </p>
             </InputSection>
           </div>
-          <ResultPanel result={result} />
+          <ResultPanel
+            result={result}
+            externalComparison={externalComparison}
+          />
         </div>
       )}
       {tab === "reverse" && (
@@ -587,6 +671,41 @@ export function CalculatorWorkspace({
             />
           </section>
           {selectedPlanRows.length > 0 && (
+            <section className="grid gap-3 md:grid-cols-2">
+              <div className="card p-5">
+                <p className="eyebrow">Scenario A · customs not seller-paid</p>
+                <h3 className="mt-2 font-semibold">
+                  Seller logistics{" "}
+                  {formatMoney(
+                    planTotals.shipping.plus(planTotals.etgb),
+                    "USD",
+                  )}
+                </h3>
+                <p className="mt-2 text-xs leading-5 text-stone-500">
+                  Customs exposure{" "}
+                  {formatMoney(planTotals.customsExposure, "USD")} remains
+                  visible but is not deducted.
+                </p>
+              </div>
+              <div className="card p-5">
+                <p className="eyebrow">Scenario B · customs seller-paid</p>
+                <h3 className="mt-2 font-semibold">
+                  Seller logistics{" "}
+                  {formatMoney(
+                    planTotals.shipping
+                      .plus(planTotals.etgb)
+                      .plus(planTotals.customsExposure),
+                    "USD",
+                  )}
+                </h3>
+                <p className="mt-2 text-xs leading-5 text-stone-500">
+                  Comparison only. This does not infer DDP or who is legally
+                  responsible.
+                </p>
+              </div>
+            </section>
+          )}
+          {selectedPlanRows.length > 0 && (
             <section className="card overflow-hidden">
               <div className="border-b p-5">
                 <h3 className="font-semibold">Scenario deduction audit</h3>
@@ -597,36 +716,82 @@ export function CalculatorWorkspace({
                 </p>
               </div>
               <div className="grid gap-px bg-stone-200 sm:grid-cols-2 xl:grid-cols-4">
-                <Deduction label="Materials" value={planTotals.materials} />
-                <Deduction label="Labour" value={planTotals.labor} />
-                <Deduction label="Packaging" value={planTotals.packaging} />
+                <Deduction
+                  label="Materials"
+                  value={planTotals.materials}
+                  description="Yarn, lining, handles and itemized material components."
+                  source={planningSources.products}
+                  href="/products"
+                />
+                <Deduction
+                  label="Labour"
+                  value={planTotals.labor}
+                  description="Saved labour hours multiplied by the planning hourly rate."
+                  source={planningSources.products}
+                  href="/products"
+                />
+                <Deduction
+                  label="Packaging"
+                  value={planTotals.packaging}
+                  description="Per-product packaging recorded in the latest cost version."
+                  source={planningSources.products}
+                  href="/products"
+                />
                 <Deduction
                   label="Other direct product costs"
                   value={planTotals.otherDirect}
+                  description="Maker payment, equipment allocation and other direct product costs."
+                  source={planningSources.products}
+                  href="/products"
                 />
                 <Deduction
-                  label="Shipping / ETGB service"
+                  label="International shipping"
                   value={planTotals.shipping}
+                  description="International transport only; customs, ETGB, insurance and marketplace fees remain separate."
+                  source={planningSources.shipping}
+                  href="/shipping"
+                />
+                <Deduction
+                  label="ETGB / export processing"
+                  value={planTotals.etgb}
+                  description="Deducted only when a separate ETGB charge is confirmed or manually enabled. Unknown never means zero."
+                  source="Latest effective ETGB cost record"
+                  href="/customs-etgb"
                 />
                 <Deduction
                   label="Customs + destination"
                   value={planTotals.customs}
+                  description="Destination-specific duty, tariff, brokerage, clearance and carrier processing."
+                  source={planningSources.customs}
+                  href="/customs"
                 />
                 <Deduction
                   label="Business overhead"
                   value={planTotals.overhead}
+                  description="Monthly accountant, SGK, software, banking, office and other costs divided by expected orders."
+                  source={planningSources.overhead}
+                  href="/business"
                 />
                 <Deduction
                   label="Etsy fees + fee VAT"
                   value={planTotals.fees}
+                  description="Listing, transaction, payment processing, regulatory, conversion and applicable fee VAT."
+                  source={planningSources.fees}
+                  href="/fees"
                 />
                 <Deduction
                   label="Tax planning reserve"
                   value={planTotals.tax}
+                  description="A planning reserve on positive estimated profit, not a filed tax liability."
+                  source={planningSources.tax}
+                  href="/business"
                 />
                 <Deduction
                   label="Other logistics + reserves"
                   value={otherPlanCosts}
+                  description="Domestic transfer, pickup, returns, damage, exchange-loss and other operating assumptions."
+                  source={planningSources.reserves}
+                  href="/calculator"
                 />
                 <Deduction
                   label="All deductions"
@@ -780,7 +945,19 @@ function PlanMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Deduction({ label, value }: { label: string; value: Decimal }) {
+function Deduction({
+  label,
+  value,
+  description,
+  source,
+  href,
+}: {
+  label: string;
+  value: Decimal;
+  description?: string;
+  source?: string;
+  href?: string;
+}) {
   const missing = value.eq(0);
   return (
     <div className="bg-white p-5">
@@ -790,6 +967,24 @@ function Deduction({ label, value }: { label: string; value: Decimal }) {
       </p>
       {missing && (
         <p className="mt-1 text-[11px] text-red-600">Not configured</p>
+      )}
+      {description && (
+        <p className="mt-2 text-[11px] leading-4 text-stone-500">
+          {description}
+        </p>
+      )}
+      {source && (
+        <p className="mt-2 text-[11px] leading-4 text-stone-600">
+          <span className="font-medium">Source:</span> {source}
+        </p>
+      )}
+      {href && (
+        <Link
+          className="mt-2 inline-block text-[11px] font-medium text-jade underline"
+          href={href}
+        >
+          Open source page →
+        </Link>
       )}
     </div>
   );
@@ -848,8 +1043,23 @@ function Toggle({
   );
 }
 
-function ResultPanel({ result }: { result: ReturnType<typeof calculate> }) {
+function ResultPanel({
+  result,
+  externalComparison,
+}: {
+  result: ReturnType<typeof calculate>;
+  externalComparison: ExternalComparison | null;
+}) {
   const t = result.totals;
+  const lineUsd = (name: string) =>
+    new Decimal(result.lines.find((line) => line.name === name)?.usd ?? 0);
+  const marketplaceCommission = lineUsd("Transaction fee");
+  const paymentCommission = lineUsd("Payment processing percentage").plus(
+    lineUsd("Payment processing fixed"),
+  );
+  const otherMarketplaceFees = lineUsd("Listing fee")
+    .plus(lineUsd("Regulatory operating fee"))
+    .plus(lineUsd("Currency conversion fee"));
   return (
     <aside className="space-y-5 xl:sticky xl:top-8 xl:self-start">
       <div className="overflow-hidden rounded-2xl bg-[#18342e] text-white shadow-soft">
@@ -888,7 +1098,7 @@ function ResultPanel({ result }: { result: ReturnType<typeof calculate> }) {
         </div>
       </div>
       <div className="card p-5">
-        <p className="eyebrow">Profit waterfall</p>
+        <p className="eyebrow">Profit layers</p>
         <div className="mt-3">
           <Waterfall
             label="Gross seller revenue"
@@ -902,8 +1112,78 @@ function ResultPanel({ result }: { result: ReturnType<typeof calculate> }) {
             value={t.internationalShippingUsd}
           />
           <Waterfall label="Customs & tariffs" value={t.customsAndTariffUsd} />
+          <Layer
+            label="1. Revenue after Etsy fees"
+            value={t.revenueAfterEtsyFees}
+          />
+          <Layer
+            label="2. Before international logistics"
+            value={t.contributionBeforeInternationalLogistics}
+          />
+          <Layer
+            label="3. After shipping"
+            value={t.contributionAfterShipping}
+          />
+          <Layer
+            label="4. After optional seller-paid customs"
+            value={t.contributionAfterOptionalCustoms}
+          />
+          <Layer
+            label="5. Before monthly overhead"
+            value={t.profitBeforeMonthlyOverhead}
+          />
+          <Layer
+            label="6. After allocated overhead"
+            value={t.operatingProfit}
+          />
+          <Layer
+            label="7. After tax and risk reserves"
+            value={t.estimatedAfterReserveProfit}
+          />
+          <div className="mt-2 rounded-lg bg-stone-50 p-3 text-xs text-stone-500">
+            8. Actual reconciled cash profit: not available until actual
+            shipping, customs, ETGB and adjustments are recorded.
+          </div>
         </div>
       </div>
+      {externalComparison && (
+        <div className="card p-5">
+          <p className="eyebrow">External calculator comparison</p>
+          <h3 className="mt-1 font-semibold">
+            MarmaraMade vs {externalComparison.provider}
+          </h3>
+          <div className="mt-3 space-y-2 text-sm">
+            <Compare
+              label="Transparent MarmaraMade Etsy fees"
+              ours={t.totalEtsyFees}
+              external={new Decimal(externalComparison.marketplaceCommissionUsd)
+                .plus(externalComparison.paymentCommissionUsd)
+                .plus(externalComparison.otherCommissionUsd)}
+            />
+            <Compare
+              label="Marketplace commission comparison"
+              ours={marketplaceCommission}
+              external={
+                new Decimal(externalComparison.marketplaceCommissionUsd)
+              }
+            />
+            <Compare
+              label="Payment commission comparison"
+              ours={paymentCommission}
+              external={new Decimal(externalComparison.paymentCommissionUsd)}
+            />
+            <Compare
+              label="Other fee comparison"
+              ours={otherMarketplaceFees}
+              external={new Decimal(externalComparison.otherCommissionUsd)}
+            />
+          </div>
+          <p className="mt-3 text-[11px] leading-4 text-amber-700">
+            Comparison only. External values never replace MarmaraMade fee
+            rules.
+          </p>
+        </div>
+      )}
       <details className="card group">
         <summary className="flex cursor-pointer list-none items-center justify-between p-5">
           <div>
@@ -974,6 +1254,35 @@ function Waterfall({
       <span className="font-medium">
         {positive ? "" : "−"}${value.toFixed(2)}
       </span>
+    </div>
+  );
+}
+
+function Layer({ label, value }: { label: string; value: Decimal }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b py-2.5 text-sm">
+      <span className="text-stone-600">{label}</span>
+      <strong>{formatMoney(value, "USD")}</strong>
+    </div>
+  );
+}
+
+function Compare({
+  label,
+  ours,
+  external,
+}: {
+  label: string;
+  ours: Decimal;
+  external: Decimal;
+}) {
+  return (
+    <div className="rounded-lg bg-stone-50 p-3">
+      <p className="text-xs text-stone-500">{label}</p>
+      <p className="mt-1 font-medium">
+        {formatMoney(ours, "USD")} vs {formatMoney(external, "USD")} ·
+        difference {formatMoney(ours.minus(external), "USD")}
+      </p>
     </div>
   );
 }

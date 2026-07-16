@@ -1,5 +1,6 @@
 import Link from "next/link";
 import {
+  createCostAssumptionProfileAction,
   createDocumentRequirementAction,
   saveGeneralSettingAction,
 } from "@/app/actions/ledger";
@@ -40,13 +41,22 @@ const sections = [
 ] as const;
 export default async function SettingsPage() {
   await requireAdmin({ redirectTo: "/settings" });
-  const [settings, rules] = await Promise.all([
+  const [settings, rules, assumption, comparison] = await Promise.all([
     prisma.appSetting.findMany(),
     prisma.documentRequirementRule.findMany({
       orderBy: { effectiveFrom: "desc" },
     }),
+    prisma.costAssumptionProfile.findFirst({
+      where: { effectiveTo: null },
+      orderBy: { effectiveFrom: "desc" },
+    }),
+    prisma.externalCalculatorComparison.findFirst({
+      where: { effectiveTo: null },
+      orderBy: { effectiveFrom: "desc" },
+    }),
   ]);
   const map = new Map(settings.map((s) => [s.key, s.value]));
+  const today = new Date().toISOString().slice(0, 10);
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <header>
@@ -82,6 +92,167 @@ export default async function SettingsPage() {
           title="6. Reports"
           body="Dashboard, cash flow, reconciliation, and reports summarize saved records without inventing values."
         />
+      </section>
+      <section className="card p-5">
+        <h2 className="font-semibold">Editable profitability starter</h2>
+        <p className="mt-1 text-sm text-stone-500">
+          Saving creates a new effective-dated version. It never rewrites old
+          orders or calculation snapshots. Dedicated pages remain the source for
+          individual product, shipping, customs, Etsy-fee, and overhead
+          versions.
+        </p>
+        <form
+          action={createCostAssumptionProfileAction}
+          className="mt-4 grid gap-3 md:grid-cols-4"
+        >
+          <Field
+            name="name"
+            label="Profile name"
+            value={assumption?.name ?? "TR to US — $149 starter"}
+          />
+          <Field
+            name="saleValueUsd"
+            label="Sale / customs value USD"
+            type="number"
+            value={assumption?.saleValueUsd.toString() ?? "149"}
+          />
+          <Field
+            name="productCostUsd"
+            label="Product cost USD"
+            type="number"
+            value={assumption?.productCostUsd.toString() ?? "20"}
+          />
+          <Field
+            name="packagingTry"
+            label="Packaging TRY"
+            type="number"
+            value={assumption?.packagingTry.toString() ?? "300"}
+          />
+          <Field
+            name="domesticTransferTry"
+            label="Domestic transfer TRY"
+            type="number"
+            value={assumption?.domesticTransferTry.toString() ?? "0"}
+          />
+          <Field
+            name="internationalShippingUsd"
+            label="International transport USD"
+            type="number"
+            value={assumption?.internationalShippingUsd.toString() ?? "50.83"}
+          />
+          <Field
+            name="insuranceUsd"
+            label="Insurance USD"
+            type="number"
+            value={assumption?.insuranceUsd.toString() ?? "0"}
+          />
+          <Field
+            name="otherCarrierSurchargeUsd"
+            label="Other carrier surcharge USD"
+            type="number"
+            value={assumption?.otherCarrierSurchargeUsd.toString() ?? "0"}
+          />
+          <Field
+            name="customsEstimateUsd"
+            label="Customs estimate USD"
+            type="number"
+            value={assumption?.customsEstimateUsd.toString() ?? "28.79"}
+          />
+          <Field
+            name="estimatedEtgbFeeUsd"
+            label="ETGB estimate USD (0 = unknown)"
+            type="number"
+            value={assumption?.estimatedEtgbFeeUsd?.toString() ?? "0"}
+          />
+          <Field
+            name="etsyPlusMonthlyTry"
+            label="Etsy Plus monthly TRY"
+            type="number"
+            value={assumption?.etsyPlusMonthlyTry.toString() ?? "500"}
+          />
+          <Field
+            name="companyPackageMonthlyTry"
+            label="Company/accounting monthly TRY"
+            type="number"
+            value={assumption?.companyPackageMonthlyTry.toString() ?? "4500"}
+          />
+          <Field
+            name="source"
+            label="Source"
+            value={assumption?.source ?? "User-provided starter assumptions"}
+          />
+          <Field
+            name="sourceDate"
+            label="Source date"
+            type="date"
+            value={today}
+          />
+          <Field
+            name="effectiveFrom"
+            label="Effective from"
+            type="date"
+            value={today}
+          />
+          <Field
+            name="notes"
+            label="Notes (optional)"
+            required={false}
+            value={
+              assumption?.notes ??
+              "Editable planning starter; not an actual order."
+            }
+          />
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="includeCustomsInSellerProfit"
+              defaultChecked={assumption?.includeCustomsInSellerProfit ?? false}
+            />
+            Seller pays customs in planning
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="includeEtgbInSellerProfit"
+              defaultChecked={assumption?.includeEtgbInSellerProfit ?? false}
+            />
+            Deduct confirmed ETGB cost
+          </label>
+          <button className="rounded-xl bg-jade px-4 py-2 text-sm text-white">
+            Save new assumption version
+          </button>
+        </form>
+        {comparison && (
+          <div className="mt-5 rounded-xl border bg-stone-50 p-4 text-sm">
+            <p className="font-medium">External calculator comparison only</p>
+            <p className="mt-1 text-stone-500">
+              {comparison.provider}: marketplace{" "}
+              {comparison.marketplaceCommissionUsd.toFixed(3)} USD, payment{" "}
+              {comparison.paymentCommissionUsd.toFixed(3)} USD, other{" "}
+              {comparison.otherCommissionUsd.toFixed(3)} USD. This snapshot is
+              never added to the Etsy profile or deducted again.
+            </p>
+          </div>
+        )}
+        <div className="mt-4 flex flex-wrap gap-2">
+          {[
+            ["Products & packaging", "/products"],
+            ["International shipping", "/shipping"],
+            ["Customs estimates & actuals", "/customs"],
+            ["ETGB status", "/customs-etgb"],
+            ["Etsy fees", "/fees"],
+            ["Monthly overhead", "/business"],
+            ["Calculator", "/calculator"],
+          ].map(([label, href]) => (
+            <Link
+              className="rounded-xl border px-3 py-2 text-sm"
+              href={href}
+              key={href}
+            >
+              {label}
+            </Link>
+          ))}
+        </div>
       </section>
       <details className="card p-5">
         <summary className="cursor-pointer font-semibold">
@@ -202,12 +373,14 @@ function Field({
   type = "text",
   placeholder,
   required = true,
+  value,
 }: {
   name: string;
   label: string;
   type?: string;
   placeholder?: string;
   required?: boolean;
+  value?: string;
 }) {
   return (
     <label className="text-xs text-stone-500">
@@ -218,6 +391,8 @@ function Field({
         type={type}
         placeholder={placeholder}
         required={required}
+        defaultValue={value}
+        step={type === "number" ? "0.01" : undefined}
       />
     </label>
   );

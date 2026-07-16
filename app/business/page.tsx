@@ -273,6 +273,7 @@ export default async function BusinessPage() {
             ["bankingTry", "Banking and payment costs (TRY)"],
             ["officeTry", "Office / workspace costs (TRY)"],
             ["otherTry", "Other recurring overhead (TRY)"],
+            ["etsyPlusTry", "Etsy Plus (TRY)", "500"],
           ].map(([name, label]) => (
             <label className="text-xs text-stone-500" key={name}>
               {label}
@@ -282,10 +283,55 @@ export default async function BusinessPage() {
                 type="number"
                 min="0"
                 step="0.01"
-                defaultValue="0"
+                defaultValue={name === "etsyPlusTry" ? "500" : "0"}
               />
             </label>
           ))}
+          <label className="text-xs text-stone-500">
+            Allocation method
+            <select
+              className="field mt-1"
+              name="allocationMethod"
+              defaultValue="EXPECTED_SALES"
+            >
+              <option>EXPECTED_SALES</option>
+              <option>ACTUAL_SALES</option>
+              <option>NONE</option>
+              <option>MANUAL_PER_ORDER</option>
+              <option>REVENUE_WEIGHTED</option>
+            </select>
+          </label>
+          <label className="text-xs text-stone-500">
+            Expected monthly sales
+            <input
+              className="field mt-1"
+              name="expectedSales"
+              type="number"
+              min="1"
+              defaultValue="10"
+            />
+          </label>
+          <label className="text-xs text-stone-500">
+            Actual completed sales (optional)
+            <input
+              className="field mt-1"
+              name="actualSales"
+              type="number"
+              min="0"
+              defaultValue="0"
+            />
+          </label>
+          <label className="text-xs text-stone-500">
+            Manual overhead per order (TRY)
+            <input
+              className="field mt-1"
+              name="manualPerOrderTry"
+              type="number"
+              min="0"
+              step="0.01"
+              defaultValue="0"
+            />
+          </label>
           <label className="text-xs text-stone-500">
             Source or professional notes (optional)
             <input className="field mt-1" name="notes" />

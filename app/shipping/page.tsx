@@ -2,6 +2,7 @@ import {
   archiveShippingQuoteAction,
   createShippingQuoteAction,
   duplicateShippingQuoteAction,
+  reconcileShippingQuoteAction,
   setPlanningDefaultShippingQuoteAction,
 } from "@/app/actions/ledger";
 import { requireAdmin } from "@/lib/auth/require-admin";
@@ -13,15 +14,26 @@ export default async function ShippingPage() {
     orderBy: { quoteDate: "desc" },
     take: 100,
   });
+  const now = new Date();
+  const automaticFallback = quotes.find(
+    (quote) =>
+      quote.shippingCurrency === "USD" &&
+      (!quote.expirationDate || quote.expirationDate >= now) &&
+      !`${quote.source || ""} ${quote.notes || ""}`
+        .toLowerCase()
+        .includes("example"),
+  );
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <Header />
       <section className="card p-5">
         <h2 className="font-semibold">New effective-dated quote</h2>
         <p className="mt-1 text-sm text-stone-500">
-          The Calculator uses only the unexpired USD quote marked as Planning
-          default. Include any ShipEntegra or ETGB service charge in the quote
-          total when the carrier charges it.
+          The Calculator prefers the unexpired USD quote marked as Planning
+          default. If none is marked, it automatically uses the latest current
+          non-example USD quote. Include any ShipEntegra or ETGB service charge
+          separately on Customs & ETGB. This quote is international transport
+          only unless its evidence explicitly says otherwise.
         </p>
         <form
           action={createShippingQuoteAction}
@@ -30,9 +42,13 @@ export default async function ShippingPage() {
           <Input name="originCountry" label="Origin country" value="TR" />
           <Input name="originCity" label="Origin city" value="Istanbul" />
           <Input name="destinationCountry" label="Destination" value="US" />
-          <Input name="carrier" label="Carrier" />
-          <Input name="serviceName" label="Service" />
-          <Input name="incoterm" label="Incoterm" value="DDP" />
+          <Input name="carrier" label="Carrier" value="ShipEntegra" />
+          <Input
+            name="serviceName"
+            label="Service"
+            value="ShipEntegra Express"
+          />
+          <Input name="incoterm" label="Incoterm" value="UNKNOWN" />
           <Input
             name="actualWeightKg"
             label="Actual kg"
@@ -45,10 +61,15 @@ export default async function ShippingPage() {
             type="number"
             value="5000"
           />
-          <Input name="length" label="Length cm" type="number" value="40" />
-          <Input name="width" label="Width cm" type="number" value="30" />
-          <Input name="height" label="Height cm" type="number" value="10" />
-          <Input name="base" label="Base price" type="number" value="0" />
+          <Input name="length" label="Length cm" type="number" value="35" />
+          <Input name="width" label="Width cm" type="number" value="45" />
+          <Input name="height" label="Height cm" type="number" value="8" />
+          <Input
+            name="base"
+            label="International transport USD"
+            type="number"
+            value="50.83"
+          />
           <Input name="fuel" label="Fuel surcharge" type="number" value="0" />
           <Input name="insurance" label="Insurance" type="number" value="0" />
           <Input name="pickup" label="Pickup" type="number" value="0" />
@@ -62,7 +83,11 @@ export default async function ShippingPage() {
             type="date"
             required={false}
           />
-          <Input name="source" label="Source" required={false} />
+          <Input
+            name="source"
+            label="Source"
+            value="ShipEntegra account calculator"
+          />
           <Input name="notes" label="Notes" required={false} />
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" name="planningDefault" />
@@ -83,6 +108,7 @@ export default async function ShippingPage() {
               <th>Total</th>
               <th>Quote / expiry</th>
               <th>Status</th>
+              <th>Actual / variance</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -95,6 +121,46 @@ export default async function ShippingPage() {
                 <td>
                   {q.originCountry} → {q.destinationCountry}
                 </td>
+                <td>
+                  {q.actualShippingCost === null ? (
+                    <form
+                      action={reconcileShippingQuoteAction}
+                      className="flex min-w-56 gap-1"
+                    >
+                      <input type="hidden" name="id" value={q.id} />
+                      <input
+                        className="field w-24"
+                        name="actualShippingCost"
+                        type="number"
+                        step="0.01"
+                        placeholder="Actual"
+                        aria-label="Actual shipping cost"
+                        required
+                      />
+                      <input
+                        className="field w-16"
+                        name="actualCostCurrency"
+                        defaultValue={q.shippingCurrency}
+                        aria-label="Actual shipping currency"
+                        required
+                      />
+                      <button className="rounded border px-2 text-xs">
+                        Reconcile
+                      </button>
+                    </form>
+                  ) : (
+                    <span className="text-xs">
+                      {q.actualShippingCost.toFixed(2)} {q.actualCostCurrency}
+                      {q.actualCostCurrency === q.shippingCurrency && (
+                        <>
+                          {" "}
+                          · variance{" "}
+                          {q.actualShippingCost.sub(q.shippingCost).toFixed(2)}
+                        </>
+                      )}
+                    </span>
+                  )}
+                </td>
                 <td>{q.billableWeightKg.toFixed(2)} kg</td>
                 <td>
                   {q.shippingCost.toFixed(2)} {q.shippingCurrency}
@@ -105,17 +171,19 @@ export default async function ShippingPage() {
                 </td>
                 <td>
                   <span className="pill">
-                    {q.expirationDate && q.expirationDate < new Date()
+                    {q.expirationDate && q.expirationDate < now
                       ? "Expired"
                       : q.planningDefault
                         ? "Planning default"
-                        : "Not used by Calculator"}
+                        : q.id === automaticFallback?.id
+                          ? "Automatic Calculator fallback"
+                          : "Saved quote"}
                   </span>
                 </td>
                 <td>
                   <div className="flex flex-wrap gap-1">
                     {!q.planningDefault &&
-                      (!q.expirationDate || q.expirationDate >= new Date()) && (
+                      (!q.expirationDate || q.expirationDate >= now) && (
                         <form action={setPlanningDefaultShippingQuoteAction}>
                           <input type="hidden" name="id" value={q.id} />
                           <button className="rounded border border-jade px-2 py-1 text-xs text-jade">
