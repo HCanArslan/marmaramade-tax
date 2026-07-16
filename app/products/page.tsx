@@ -148,47 +148,61 @@ export default async function ProductsPage() {
           action={createProductMaterialAction}
           className="mt-4 grid gap-3 sm:grid-cols-6"
         >
-          <select className="field" name="productCostVersionId" required>
-            {allProducts.flatMap((p) =>
-              p.costVersions.map((c) => (
-                <option value={c.id} key={c.id}>
-                  {p.sku} · {c.effectiveFrom.toLocaleDateString("en-GB")}
+          <label className="text-xs text-stone-500">
+            Cost version
+            <select className="field mt-1" name="productCostVersionId" required>
+              {allProducts.flatMap((p) =>
+                p.costVersions.map((c) => (
+                  <option value={c.id} key={c.id}>
+                    {p.sku} · {c.effectiveFrom.toLocaleDateString("en-GB")}
+                  </option>
+                )),
+              )}
+            </select>
+          </label>
+          <label className="text-xs text-stone-500">
+            Product
+            <select className="field mt-1" name="productId">
+              {allProducts.map((p) => (
+                <option value={p.id} key={p.id}>
+                  {p.sku}
                 </option>
-              )),
-            )}
-          </select>
-          <select className="field" name="productId">
-            {allProducts.map((p) => (
-              <option value={p.id} key={p.id}>
-                {p.sku}
-              </option>
-            ))}
-          </select>
-          <input
-            className="field"
-            name="componentType"
-            placeholder="YARN"
-            required
-          />
-          <input
-            className="field"
-            name="description"
-            placeholder="Description"
-          />
-          <input
-            className="field"
-            name="quantity"
-            type="number"
-            step="0.01"
-            defaultValue="1"
-          />
-          <input
-            className="field"
-            name="unitCostTry"
-            type="number"
-            step="0.01"
-            defaultValue="0"
-          />
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-stone-500">
+            Component type
+            <input
+              className="field mt-1"
+              name="componentType"
+              placeholder="Example: YARN"
+              required
+            />
+          </label>
+          <label className="text-xs text-stone-500">
+            Description (optional)
+            <input className="field mt-1" name="description" />
+          </label>
+          <label className="text-xs text-stone-500">
+            Quantity used
+            <input
+              className="field mt-1"
+              name="quantity"
+              type="number"
+              step="0.01"
+              defaultValue="1"
+            />
+          </label>
+          <label className="text-xs text-stone-500">
+            Unit cost (TRY)
+            <input
+              className="field mt-1"
+              name="unitCostTry"
+              type="number"
+              step="0.01"
+              defaultValue="0"
+            />
+          </label>
           <button className="rounded-xl bg-jade px-3 py-2 text-sm text-white">
             Add component
           </button>

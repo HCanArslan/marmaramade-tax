@@ -24,6 +24,11 @@ export interface CalculatorProductPreset {
   discountSource: "ETSY" | "MANUAL" | "NONE";
   availableQuantity: number;
   state: string;
+  materialCostTry: string;
+  laborHours: string;
+  laborHourlyRateTry: string;
+  packagingCostTry: string;
+  additionalDirectCostTry: string;
 }
 
 interface CalculatorExchangeRate {
@@ -36,12 +41,15 @@ interface CalculatorExchangeRate {
 export function CalculatorWorkspace({
   products,
   exchangeRate,
+  planningDefaults,
 }: {
   products: CalculatorProductPreset[];
   exchangeRate: CalculatorExchangeRate;
+  planningDefaults: Partial<CalculatorInput>;
 }) {
   const [input, setInput] = useState<CalculatorInput>({
     ...defaultCalculatorInput,
+    ...planningDefaults,
     usdTryRate: exchangeRate.rate,
   });
   const [selectedProductId, setSelectedProductId] = useState("");
@@ -51,7 +59,7 @@ export function CalculatorWorkspace({
   const [tab, setTab] = useState<Tab>("quick");
   const [targetProfit, setTargetProfit] = useState("50");
   const [targetMargin, setTargetMargin] = useState("30");
-  const calculationInput = useMemo(() => withoutIgnoredCosts(input), [input]);
+  const calculationInput = input;
   const result = useMemo(() => calculate(calculationInput), [calculationInput]);
   const set = (key: keyof CalculatorInput, value: string | boolean) =>
     setInput((current) => ({ ...current, [key]: value }));
@@ -86,10 +94,19 @@ export function CalculatorWorkspace({
             sellerFundedDiscountUsd: product.discountAmount,
           }
         : {}),
+      materialCostTry: product.materialCostTry,
+      laborHours: product.laborHours,
+      laborHourlyRateTry: product.laborHourlyRateTry,
+      packagingCostTry: product.packagingCostTry,
+      additionalDirectCostTry: product.additionalDirectCostTry,
     }));
   };
   const reset = () => {
-    setInput({ ...defaultCalculatorInput, usdTryRate: exchangeRate.rate });
+    setInput({
+      ...defaultCalculatorInput,
+      ...planningDefaults,
+      usdTryRate: exchangeRate.rate,
+    });
     setSelectedProductId("");
   };
   const planRows = useMemo(
@@ -105,6 +122,11 @@ export function CalculatorWorkspace({
                 ...calculationInput,
                 itemSubtotalUsd: product.originalPrice,
                 sellerFundedDiscountUsd: product.discountAmount,
+                materialCostTry: product.materialCostTry,
+                laborHours: product.laborHours,
+                laborHourlyRateTry: product.laborHourlyRateTry,
+                packagingCostTry: product.packagingCostTry,
+                additionalDirectCostTry: product.additionalDirectCostTry,
               })
             : null;
         return { product, quantity, calculation };
@@ -159,9 +181,10 @@ export function CalculatorWorkspace({
             Price and sales planning with every fee visible.
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-stone-500">
-            Product costs, business overhead and income-tax reserves are
-            intentionally excluded for now. Choose a synchronized product to
-            load its Etsy price and discount.
+            Choose a synchronized product to load its Etsy price and saved cost
+            version. The result also uses the latest saved monthly overhead,
+            planning tax reserve, exchange rate, shipping quote, and customs
+            quote when those records exist.
           </p>
         </div>
         <button
@@ -216,7 +239,7 @@ export function CalculatorWorkspace({
                   ? ` after ${new Decimal(selectedProduct.discountPercentage).toDecimalPlaces(2).toString()}% ${selectedProduct.discountSource === "ETSY" ? "Etsy" : "local"} discount`
                   : " · no active discount"}
                 <span className="mt-1 block text-emerald-800/70">
-                  Etsy pricing loaded. Product cost remains excluded.
+                  Etsy pricing and the latest local product cost are loaded.
                 </span>
               </div>
             ) : (
@@ -288,8 +311,68 @@ export function CalculatorWorkspace({
               </div>
             </InputSection>
             <InputSection
+              title="Product & business costs"
+              hint="Selected product + saved monthly planning inputs"
+            >
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <NumberField
+                  label="Materials"
+                  value={input.materialCostTry}
+                  suffix="TRY"
+                  onChange={(v) => set("materialCostTry", v)}
+                />
+                <NumberField
+                  label="Labor hours"
+                  value={input.laborHours}
+                  suffix="HRS"
+                  onChange={(v) => set("laborHours", v)}
+                />
+                <NumberField
+                  label="Labor hourly value"
+                  value={input.laborHourlyRateTry}
+                  suffix="TRY"
+                  onChange={(v) => set("laborHourlyRateTry", v)}
+                />
+                <NumberField
+                  label="Packaging"
+                  value={input.packagingCostTry}
+                  suffix="TRY"
+                  onChange={(v) => set("packagingCostTry", v)}
+                />
+                <NumberField
+                  label="Other direct cost"
+                  value={input.additionalDirectCostTry}
+                  suffix="TRY"
+                  onChange={(v) => set("additionalDirectCostTry", v)}
+                />
+                <NumberField
+                  label="Monthly overhead"
+                  value={input.monthlyOverheadTry}
+                  suffix="TRY"
+                  onChange={(v) => set("monthlyOverheadTry", v)}
+                />
+                <NumberField
+                  label="Expected monthly orders"
+                  value={input.expectedMonthlyOrders}
+                  suffix="ORDERS"
+                  onChange={(v) => set("expectedMonthlyOrders", v)}
+                />
+                <NumberField
+                  label="Income-tax planning reserve"
+                  value={input.taxReserveRate}
+                  suffix="%"
+                  onChange={(v) => set("taxReserveRate", v)}
+                />
+              </div>
+              <p className="mt-3 flex gap-2 text-xs text-stone-500">
+                <Info size={14} className="shrink-0" /> Labor is an economic
+                planning value. The tax percentage is a reserve, not a filed or
+                accountant-confirmed tax calculation.
+              </p>
+            </InputSection>
+            <InputSection
               title="Shipping & DDP customs"
-              hint="Manual dated quotes"
+              hint="Latest saved quote or manual input"
             >
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <NumberField
@@ -324,17 +407,16 @@ export function CalculatorWorkspace({
                 />
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                   <span className="pill border-emerald-200 bg-white text-emerald-700">
-                    DDP · US
+                    Saved planning inputs
                   </span>
                   <p className="mt-2 text-xs leading-4 text-emerald-800">
-                    40 × 30 × 7 cm · 1.68 kg billable
+                    Zero means no dated quote has been loaded yet.
                   </p>
                 </div>
               </div>
               <p className="mt-3 flex gap-2 text-xs text-stone-500">
-                <Info size={14} className="shrink-0" /> The $4.50 line is a
-                destination carrier customs-processing charge, not a ShipEntegra
-                service.
+                <Info size={14} className="shrink-0" /> Carrier processing is a
+                destination customs charge, not a ShipEntegra service.
               </p>
             </InputSection>
           </div>
@@ -397,7 +479,7 @@ export function CalculatorWorkspace({
               value={formatMoney(planTotals.fees, "USD")}
             />
             <PlanMetric
-              label="Profit · cost and tax excluded"
+              label="Estimated profit after saved costs and reserve"
               value={`${formatMoney(planTotals.profit, "USD")} · ${formatMoney(planTotals.profit.mul(input.usdTryRate), "TRY")}`}
             />
           </section>
@@ -480,9 +562,9 @@ export function CalculatorWorkspace({
           </section>
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
             <AlertTriangle className="mr-1.5 inline" size={14} />
-            This is a scenario, not a forecast. Product cost, business overhead
-            and income tax are excluded. Shipping and customs are applied once
-            per planned unit using the current Quick calculator values.
+            This is a planning scenario, not a filed tax calculation. Each row
+            uses its own saved product cost. Business overhead, tax reserve,
+            shipping, and customs use the current Quick calculator values.
           </div>
         </div>
       )}
@@ -578,7 +660,7 @@ function ResultPanel({ result }: { result: ReturnType<typeof calculate> }) {
       <div className="overflow-hidden rounded-2xl bg-[#18342e] text-white shadow-soft">
         <div className="border-b border-white/10 p-6">
           <p className="text-xs font-medium text-white/50">
-            Profit · product cost and income tax excluded
+            Estimated profit after saved costs and reserve
           </p>
           <p className="mt-2 text-4xl font-semibold tracking-tight">
             {formatMoney(t.estimatedAfterReserveProfit, "USD")}
@@ -731,7 +813,7 @@ function ReverseView({
         <h2 className="mt-1 text-xl font-semibold">Solve backwards</h2>
         <div className="mt-6 space-y-5">
           <NumberField
-            label="Desired profit · cost and tax excluded"
+            label="Desired after-reserve profit"
             value={targetProfit}
             suffix="USD"
             onChange={setTargetProfit}
@@ -768,11 +850,11 @@ function ReverseView({
           </div>
           {scenarios.map(([label, on, rate]) => {
             const price = solvePrice(
-              withoutIgnoredCosts({
+              {
                 ...input,
                 offsiteAdAttributed: on,
                 offsiteAdsRate: rate,
-              }),
+              },
               { kind: "profitUsd", value: targetProfit || 0 },
             );
             return (
@@ -816,21 +898,4 @@ function PriceCard({
       </div>
     </div>
   );
-}
-
-function withoutIgnoredCosts(input: CalculatorInput): CalculatorInput {
-  return {
-    ...input,
-    materialCostTry: "0",
-    laborHours: "0",
-    laborHourlyRateTry: "0",
-    packagingCostTry: "0",
-    additionalDirectCostTry: "0",
-    monthlyOverheadTry: "0",
-    returnReserveRate: "0",
-    damageReserveRate: "0",
-    exchangeLossReserveRate: "0",
-    taxReserveRate: "0",
-    otherOperatingExpensesUsd: "0",
-  };
 }

@@ -1,6 +1,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { access } from "node:fs/promises";
+import { applyFeeProfile } from "@/lib/domain/fee-profile";
+import { defaultCalculatorInput } from "@/lib/domain/defaults";
 
 const source = (file: string) =>
   readFile(path.join(process.cwd(), file), "utf8");
@@ -38,5 +41,52 @@ describe("planning usability", () => {
     expect(exemption).toContain("Do not fill an artisan-exemption limit yet");
     expect(exemption).toContain("Confirmed annual limit (TRY)");
     expect(exemption).toContain("Actual withholding shown by bank (TRY)");
+  });
+
+  it("keeps every sidebar destination backed by a route page", async () => {
+    const sidebar = await source("components/sidebar.tsx");
+    const routes = [...sidebar.matchAll(/href: "([^"]+)"/g)].map(
+      (match) => match[1],
+    );
+    await Promise.all(
+      routes.map((route) =>
+        access(path.join(process.cwd(), "app", route.slice(1), "page.tsx")),
+      ),
+    );
+  });
+
+  it("does not erase saved costs or show hard-coded dashboard examples", async () => {
+    const [calculator, dashboard, defaults] = await Promise.all([
+      source("components/calculator-workspace.tsx"),
+      source("app/page.tsx"),
+      source("lib/domain/defaults.ts"),
+    ]);
+    expect(calculator).not.toContain("withoutIgnoredCosts");
+    expect(calculator).toContain("Product & business costs");
+    expect(dashboard).not.toContain("Tuesday · 14 July 2026");
+    expect(dashboard).not.toContain("40.00 USD/TRY");
+    expect(defaults).toContain('internationalShippingUsd: "0"');
+  });
+
+  it("uses saved fee rules as calculator inputs", () => {
+    const result = applyFeeProfile(defaultCalculatorInput, [
+      {
+        category: "PAYMENT_PROCESSING_PERCENT",
+        percentageRate: { toString: () => "6.5" },
+        fixedAmount: null,
+        fixedCurrency: null,
+        vatApplicable: true,
+        vatRate: { toString: () => "20" },
+      },
+    ]);
+    expect(result.processingRate).toBe("6.5");
+    expect(result.vatApplicable.processingPercentage).toBe(true);
+  });
+
+  it("shows catalog, Etsy, and physical inventory as separate reconciled values", async () => {
+    const inventory = await source("app/inventory/page.tsx");
+    expect(inventory).toContain("Catalog products");
+    expect(inventory).toContain("Etsy sellable quantity");
+    expect(inventory).toContain("Recorded finished units");
   });
 });

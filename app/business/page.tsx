@@ -252,38 +252,44 @@ export default async function BusinessPage() {
       </section>
       <section className="card p-5">
         <h2 className="font-semibold">Sole-proprietorship monthly overhead</h2>
-        <p className="mt-1 text-xs text-stone-500">
-          Manual professional-confirmed planning inputs; no SGK consequence is
-          inferred.
+        <p className="mt-1 max-w-3xl text-xs leading-5 text-stone-500">
+          Enter recurring business costs for one month. The Calculator divides
+          their total by expected monthly orders. Leave an amount at zero only
+          when that category genuinely has no cost; this is planning data and
+          does not determine deductibility or SGK treatment.
         </p>
         <form
           action={saveMonthlyOverheadAction}
           className="mt-4 grid gap-3 sm:grid-cols-4"
         >
-          <input className="field" name="month" type="date" required />
+          <label className="text-xs text-stone-500">
+            Month
+            <input className="field mt-1" name="month" type="month" required />
+          </label>
           {[
-            "accountantTry",
-            "socialSecurityTry",
-            "softwareTry",
-            "bankingTry",
-            "officeTry",
-            "otherTry",
-          ].map((n) => (
-            <input
-              aria-label={n}
-              className="field"
-              name={n}
-              type="number"
-              step="0.01"
-              defaultValue="0"
-              key={n}
-            />
+            ["accountantTry", "Accountant / bookkeeping (TRY)"],
+            ["socialSecurityTry", "SGK / Bağ-Kur planning amount (TRY)"],
+            ["softwareTry", "Software subscriptions (TRY)"],
+            ["bankingTry", "Banking and payment costs (TRY)"],
+            ["officeTry", "Office / workspace costs (TRY)"],
+            ["otherTry", "Other recurring overhead (TRY)"],
+          ].map(([name, label]) => (
+            <label className="text-xs text-stone-500" key={name}>
+              {label}
+              <input
+                className="field mt-1"
+                name={name}
+                type="number"
+                min="0"
+                step="0.01"
+                defaultValue="0"
+              />
+            </label>
           ))}
-          <input
-            className="field"
-            name="notes"
-            placeholder="Professional determination notes"
-          />
+          <label className="text-xs text-stone-500">
+            Source or professional notes (optional)
+            <input className="field mt-1" name="notes" />
+          </label>
           <button className="rounded-xl bg-jade px-3 py-2 text-sm text-white">
             Save month
           </button>

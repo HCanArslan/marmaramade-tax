@@ -16,6 +16,7 @@ import {
   checklistCompleteness,
 } from "@/lib/compliance";
 import { calculate } from "@/lib/domain/calculator";
+import { applyFeeProfile } from "@/lib/domain/fee-profile";
 import { defaultCalculatorInput } from "@/lib/domain/defaults";
 import { calculateProductCost } from "@/lib/domain/product-cost";
 import { optimizeProductMix } from "@/lib/goals/planner";
@@ -1072,24 +1073,31 @@ export async function createManualOrderAction(formData: FormData) {
     })
     .parse(Object.fromEntries(formData));
   const result = await prisma.$transaction(async (tx) => {
-    const [cost, business, fee, rate, shipping, customs] = await Promise.all([
-      tx.productCostVersion.findUniqueOrThrow({
-        where: { id: v.productCostVersionId },
-      }),
-      tx.businessProfileVersion.findUniqueOrThrow({
-        where: { id: v.businessProfileVersionId },
-      }),
-      tx.feeProfile.findUniqueOrThrow({ where: { id: v.feeProfileId } }),
-      tx.exchangeRateSnapshot.findUniqueOrThrow({
-        where: { id: v.exchangeRateSnapshotId },
-      }),
-      v.shippingQuoteId
-        ? tx.shippingQuote.findUnique({ where: { id: v.shippingQuoteId } })
-        : null,
-      v.customsQuoteId
-        ? tx.customsQuote.findUnique({ where: { id: v.customsQuoteId } })
-        : null,
-    ]);
+    const [cost, business, legal, fee, rate, shipping, customs] =
+      await Promise.all([
+        tx.productCostVersion.findUniqueOrThrow({
+          where: { id: v.productCostVersionId },
+        }),
+        tx.businessProfileVersion.findUniqueOrThrow({
+          where: { id: v.businessProfileVersionId },
+        }),
+        tx.legalOperatingProfile.findUniqueOrThrow({
+          where: { id: v.legalOperatingProfileId },
+        }),
+        tx.feeProfile.findUniqueOrThrow({
+          where: { id: v.feeProfileId },
+          include: { rules: true },
+        }),
+        tx.exchangeRateSnapshot.findUniqueOrThrow({
+          where: { id: v.exchangeRateSnapshotId },
+        }),
+        v.shippingQuoteId
+          ? tx.shippingQuote.findUnique({ where: { id: v.shippingQuoteId } })
+          : null,
+        v.customsQuoteId
+          ? tx.customsQuote.findUnique({ where: { id: v.customsQuoteId } })
+          : null,
+      ]);
     const duty =
       customs?.customsDutyAmount ??
       customs?.declaredValue.mul(customs.customsDutyRate).div(100) ??
@@ -1098,8 +1106,16 @@ export async function createManualOrderAction(formData: FormData) {
       customs?.additionalTariffAmount ??
       customs?.declaredValue.mul(customs.additionalTariffRate).div(100) ??
       0;
+    const monthlyOverhead = business.accountantMonthlyTry
+      .plus(business.socialSecurityMonthlyTry)
+      .plus(business.invoicingSoftwareMonthlyTry)
+      .plus(business.bankingMonthlyTry)
+      .plus(business.officeMonthlyTry)
+      .plus(business.otherMonthlyBusinessCostsTry)
+      .plus(v.overheadTry);
+    const feeInput = applyFeeProfile(defaultCalculatorInput, fee.rules);
     const calc = calculate({
-      ...defaultCalculatorInput,
+      ...feeInput,
       itemSubtotalUsd: v.unitPrice * v.quantity,
       materialCostTry: calculateProductCost({
         materialComponentsTry: [cost.materialCostTry],
@@ -1121,8 +1137,18 @@ export async function createManualOrderAction(formData: FormData) {
       customsDutyUsd: duty,
       additionalTariffUsd: tariff,
       carrierProcessingFeeUsd: customs?.carrierProcessingFee ?? 0,
-      monthlyOverheadTry: v.overheadTry,
-      expectedMonthlyOrders: 1,
+      monthlyOverheadTry: monthlyOverhead,
+      expectedMonthlyOrders: business.expectedMonthlyOrders,
+      taxReserveRate: legal.incomeTaxReserveRate,
+      businessStatus:
+        legal.operatingMode === "SOLE_PROPRIETORSHIP"
+          ? "SOLE_PROPRIETORSHIP"
+          : "INDIVIDUAL_UNREGISTERED",
+      vatTreatment:
+        business.etsyVatTreatment === "ETSY_CHARGES_SELLER_FEE_VAT"
+          ? "CHARGED_BY_ETSY"
+          : "ACCOUNTANT_MANAGED",
+      sellerFeeVatRate: business.sellerFeeVatRate,
       usdTryRate: rate.rate,
     });
     const order = await tx.order.create({
@@ -1422,6 +1448,8 @@ export async function saveMonthlyOverheadAction(formData: FormData) {
     },
   });
   revalidatePath("/business");
+  revalidatePath("/calculator");
+  revalidatePath("/");
 }
 
 export async function runInventoryGoalAction(formData: FormData) {
@@ -1440,26 +1468,86 @@ export async function runInventoryGoalAction(formData: FormData) {
   });
   const settings = goal.scenarioSettings as { exchangeRate?: number };
   const rate = new Decimal(settings.exchangeRate || 1);
-  const products = await prisma.product.findMany({
-    where: { active: true },
-    include: {
-      costVersions: { orderBy: { effectiveFrom: "desc" }, take: 1 },
-      etsyListingLinks: { include: { listing: true } },
-    },
-  });
+  const [products, feeProfile, legalProfile, overhead, shipping, customs] =
+    await Promise.all([
+      prisma.product.findMany({
+        where: { active: true },
+        include: {
+          costVersions: { orderBy: { effectiveFrom: "desc" }, take: 1 },
+          etsyListingLinks: { include: { listing: true } },
+        },
+      }),
+      prisma.feeProfile.findFirst({
+        where: { marketplace: "Etsy", country: "TR" },
+        include: { rules: true },
+        orderBy: { effectiveFrom: "desc" },
+      }),
+      prisma.legalOperatingProfile.findUnique({
+        where: { id: goal.operatingProfileId },
+      }),
+      prisma.monthlyOverhead.findFirst({ orderBy: { month: "desc" } }),
+      prisma.shippingQuote.findFirst({
+        where: { planningDefault: true, shippingCurrency: "USD" },
+        orderBy: { quoteDate: "desc" },
+      }),
+      prisma.customsQuote.findFirst({
+        where: { declaredValueCurrency: "USD" },
+        orderBy: { quoteDate: "desc" },
+      }),
+    ]);
+  const monthlyOverhead = overhead
+    ? overhead.accountantTry
+        .plus(overhead.socialSecurityTry)
+        .plus(overhead.softwareTry)
+        .plus(overhead.bankingTry)
+        .plus(overhead.officeTry)
+        .plus(overhead.otherTry)
+    : new Decimal(0);
+  const duty =
+    customs?.customsDutyAmount ??
+    customs?.declaredValue.mul(customs.customsDutyRate).div(100) ??
+    0;
+  const tariff =
+    customs?.additionalTariffAmount ??
+    customs?.declaredValue.mul(customs.additionalTariffRate).div(100) ??
+    0;
+  const baseInput = applyFeeProfile(
+    defaultCalculatorInput,
+    feeProfile?.rules ?? [],
+  );
   const candidates = products.flatMap((p) => {
     const cost = p.costVersions[0],
       listing = p.etsyListingLinks[0]?.listing;
     if (!cost || !listing || listing.quantity <= 0) return [];
     const price = listing.buyerDiscountedPrice ?? listing.priceAmount;
     const calc = calculate({
-      ...defaultCalculatorInput,
+      ...baseInput,
       itemSubtotalUsd: price,
       materialCostTry: cost.materialCostTry,
       laborHours: cost.laborHours,
       laborHourlyRateTry: cost.laborHourlyRateTry,
       packagingCostTry: cost.packagingCostTry,
       additionalDirectCostTry: cost.additionalDirectCostTry,
+      monthlyOverheadTry: monthlyOverhead,
+      expectedMonthlyOrders: legalProfile?.expectedMonthlyOrders ?? 1,
+      taxReserveRate: legalProfile?.incomeTaxReserveRate ?? 0,
+      businessStatus:
+        legalProfile?.operatingMode === "SOLE_PROPRIETORSHIP"
+          ? "SOLE_PROPRIETORSHIP"
+          : "INDIVIDUAL_UNREGISTERED",
+      vatTreatment:
+        legalProfile?.sellerFeeVatTreatment === "ETSY_CHARGES_SELLER_FEE_VAT"
+          ? "CHARGED_BY_ETSY"
+          : "ACCOUNTANT_MANAGED",
+      internationalShippingUsd: shipping?.shippingCost ?? 0,
+      shippingInsuranceUsd: shipping?.insuranceCost ?? 0,
+      customsDutyUsd: duty,
+      additionalTariffUsd: tariff,
+      carrierProcessingFeeUsd: customs?.carrierProcessingFee ?? 0,
+      brokerageFeeUsd: customs?.brokerageFee ?? 0,
+      customsClearanceFeeUsd: customs?.customsClearanceFee ?? 0,
+      destinationFeesUsd:
+        customs?.otherDestinationFee.plus(customs.destinationTax) ?? 0,
       usdTryRate: rate,
       offsiteAdAttributed: v.offsiteAds,
     });
@@ -1471,6 +1559,10 @@ export async function runInventoryGoalAction(formData: FormData) {
         stock: p.oneOfOne ? Math.min(1, listing.quantity) : listing.quantity,
         price,
         material: cost.materialCostTry,
+        fees: calc.totals.totalEtsyFees,
+        logistics: calc.totals.internationalShippingUsd.plus(
+          calc.totals.customsAndTariffUsd,
+        ),
       },
     ];
   });
@@ -1531,8 +1623,14 @@ export async function runInventoryGoalAction(formData: FormData) {
           new Decimal(0),
         ),
         totalLaborHours: best?.labor ?? 0,
-        totalFeesUsd: 0,
-        totalLogisticsUsd: 0,
+        totalFeesUsd: candidates.reduce(
+          (s, p, i) => s.plus(best ? p.fees.mul(best.quantities[i]) : 0),
+          new Decimal(0),
+        ),
+        totalLogisticsUsd: candidates.reduce(
+          (s, p, i) => s.plus(best ? p.logistics.mul(best.quantities[i]) : 0),
+          new Decimal(0),
+        ),
         totalMaterialsTry: candidates.reduce(
           (s, p, i) => s.plus(best ? p.material.mul(best.quantities[i]) : 0),
           new Decimal(0),

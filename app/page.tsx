@@ -1,194 +1,353 @@
 import Link from "next/link";
+import Decimal from "decimal.js";
 import {
   ArrowRight,
   CircleAlert,
   CircleDollarSign,
   Package,
   Ship,
-  Sparkles,
   TrendingUp,
 } from "lucide-react";
-import { DashboardChart } from "@/components/dashboard-charts";
-import { calculate } from "@/lib/domain/calculator";
-import { defaultCalculatorInput } from "@/lib/domain/defaults";
-import { formatMoney } from "@/lib/domain/money";
+import {
+  DashboardChart,
+  type DashboardChartPoint,
+} from "@/components/dashboard-charts";
 import { requireAdmin } from "@/lib/auth/require-admin";
+import { getWeeklyUsdTryRate } from "@/lib/exchange-rate";
+import { formatMoney } from "@/lib/domain/money";
 import { prisma } from "@/lib/prisma";
 
 export default async function Dashboard() {
   await requireAdmin({ redirectTo: "/" });
   const now = new Date();
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const [business, formationOpen, ordersThisMonth, pendingOrders, expensesThisMonth, taxDue, missingDocuments, availableUnits, unmatchedLedger, unmatchedBank, activeGoal] = await Promise.all([
-    prisma.businessProfile.findFirst({ where: { active: true }, orderBy: { effectiveFrom: "desc" } }),
-    prisma.formationTask.count({ where: { status: { notIn: ["COMPLETED", "NOT_APPLICABLE"] } } }),
-    prisma.order.count({ where: { orderDate: { gte: monthStart } } }),
-    prisma.order.count({ where: { orderStatus: { notIn: ["SHIPPED", "COMPLETED", "CANCELLED", "REFUNDED"] } } }),
-    prisma.expense.count({ where: { expenseDate: { gte: monthStart }, deletedAt: null } }),
-    prisma.taxObligation.count({ where: { status: { notIn: ["PAID", "CANCELLED"] }, dueDate: { gte: now } } }),
-    prisma.orderDocumentChecklistItem.count({ where: { required: true, verified: false } }),
+  const monthStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+  );
+  const nextMonth = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
+  );
+  const chartStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1),
+  );
+
+  const [
+    business,
+    products,
+    listings,
+    savedRate,
+    snapshots,
+    ordersThisMonth,
+    pendingOrders,
+    activeGoal,
+    availableUnits,
+    materials,
+    shipping,
+    customs,
+  ] = await Promise.all([
+    prisma.businessProfile.findFirst({
+      where: { active: true },
+      orderBy: { effectiveFrom: "desc" },
+    }),
+    prisma.product.findMany({
+      where: { active: true },
+      include: {
+        costVersions: { orderBy: { effectiveFrom: "desc" }, take: 1 },
+      },
+    }),
+    prisma.etsyListing.findMany({
+      where: { state: "active" },
+      select: {
+        quantity: true,
+        priceAmount: true,
+        buyerDiscountedPrice: true,
+        priceCurrency: true,
+      },
+    }),
+    prisma.exchangeRateSnapshot.findFirst({
+      where: { baseCurrency: "USD", quoteCurrency: "TRY" },
+      orderBy: { capturedAt: "desc" },
+    }),
+    prisma.orderCostSnapshot.findMany({
+      where: { calculatedAt: { gte: chartStart } },
+      select: {
+        calculatedAt: true,
+        grossRevenueUsd: true,
+        estimatedProfitUsd: true,
+      },
+    }),
+    prisma.order.count({
+      where: { orderDate: { gte: monthStart, lt: nextMonth } },
+    }),
+    prisma.order.count({
+      where: {
+        orderStatus: {
+          notIn: ["SHIPPED", "COMPLETED", "CANCELLED", "REFUNDED"],
+        },
+      },
+    }),
+    prisma.profitGoal.findFirst({
+      where: { startDate: { lt: nextMonth }, endDate: { gte: monthStart } },
+      orderBy: { updatedAt: "desc" },
+    }),
     prisma.productionUnit.count({ where: { inventoryStatus: "AVAILABLE" } }),
-    prisma.etsyLedgerEntry.count({ where: { manualReview: true } }),
-    prisma.bankTransaction.count({ where: { reconciliationStatus: { in: ["UNMATCHED", "NEEDS_REVIEW"] } } }),
-    prisma.profitGoal.findFirst({ where: { endDate: { gte: now } }, orderBy: { startDate: "asc" } }),
+    prisma.material.count({ where: { active: true } }),
+    prisma.shippingQuote.findFirst({
+      where: {
+        planningDefault: true,
+        shippingCurrency: "USD",
+        OR: [{ expirationDate: null }, { expirationDate: { gte: now } }],
+      },
+      orderBy: { quoteDate: "desc" },
+    }),
+    prisma.customsQuote.findFirst({
+      where: {
+        declaredValueCurrency: "USD",
+        OR: [{ expirationDate: null }, { expirationDate: { gte: now } }],
+      },
+      orderBy: { quoteDate: "desc" },
+    }),
   ]);
-  const result = calculate(defaultCalculatorInput);
-  const profit = result.totals.estimatedAfterReserveProfit;
+
+  const rate = await getWeeklyUsdTryRate(savedRate);
+  const missingCosts = products.filter(
+    (product) => !product.costVersions.length,
+  ).length;
+  const etsyQuantity = listings.reduce(
+    (sum, listing) => sum + listing.quantity,
+    0,
+  );
+  const usdListings = listings.filter(
+    (listing) => listing.priceCurrency === "USD",
+  );
+  const averagePrice = usdListings.length
+    ? usdListings
+        .reduce(
+          (sum, listing) =>
+            sum.plus(
+              (listing.buyerDiscountedPrice ?? listing.priceAmount).toString(),
+            ),
+          new Decimal(0),
+        )
+        .div(usdListings.length)
+    : new Decimal(0);
+  const currentMonthSnapshots = snapshots.filter(
+    (snapshot) =>
+      snapshot.calculatedAt >= monthStart && snapshot.calculatedAt < nextMonth,
+  );
+  const monthProfit = sum(
+    currentMonthSnapshots.map((snapshot) => snapshot.estimatedProfitUsd),
+  );
+  const monthRevenue = sum(
+    currentMonthSnapshots.map((snapshot) => snapshot.grossRevenueUsd),
+  );
+  const customsTotal = customs
+    ? (
+        customs.customsDutyAmount ??
+        customs.declaredValue.mul(customs.customsDutyRate).div(100)
+      )
+        .plus(
+          customs.additionalTariffAmount ??
+            customs.declaredValue.mul(customs.additionalTariffRate).div(100),
+        )
+        .plus(customs.carrierProcessingFee)
+        .plus(customs.brokerageFee)
+        .plus(customs.customsClearanceFee)
+        .plus(customs.destinationTax)
+        .plus(customs.otherDestinationFee)
+    : null;
+  const chartData = chartPoints(now, snapshots);
+
   return (
     <div className="mx-auto max-w-[1440px] space-y-7">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="eyebrow">Tuesday · 14 July 2026</p>
+          <p className="eyebrow">
+            {now.toLocaleDateString("en-GB", {
+              weekday: "long",
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            })}
+          </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-[-.035em] sm:text-4xl">
-            Good evening, MarmaraMade.
+            MarmaraMade overview
           </h1>
           <p className="mt-2 text-sm text-stone-500">
-            Your handmade business, measured in both currencies.
+            Only synchronized or saved records are shown—no illustrative
+            business figures.
           </p>
         </div>
         <Link
           href="/calculator"
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-jade px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-[#115648]"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-jade px-4 py-2.5 text-sm font-medium text-white"
         >
-          Price a bag <ArrowRight size={16} />
+          Open calculator <ArrowRight size={16} />
         </Link>
       </header>
+
       <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
-        Active legal structure: Hamit Can Arslan — Sole Proprietorship
+        Active legal structure: {business?.legalName ?? "Profile missing"} ·
+        USD/TRY {rate.rate} from {rate.source} ({rate.asOf})
       </div>
+
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric
-          label="Example sale"
-          value={formatMoney(150, "USD")}
-          note="Native revenue"
+          label="Revenue this month"
+          value={formatMoney(monthRevenue, "USD")}
+          note={`${currentMonthSnapshots.length} completed calculation snapshots`}
           icon={<CircleDollarSign />}
         />
         <Metric
-          label="Estimated profit"
-          value={formatMoney(profit, "USD")}
-          note={`${result.totals.afterReserveMargin.toFixed(1)}% after-reserve margin`}
+          label="Estimated net profit"
+          value={formatMoney(monthProfit, "USD")}
+          note="After saved costs and reserves in order snapshots"
           icon={<TrendingUp />}
           accent
         />
         <Metric
-          label="Shipping + DDP"
-          value={formatMoney(
-            result.totals.internationalShippingUsd.plus(
-              result.totals.customsAndTariffUsd,
-            ),
-            "USD",
-          )}
-          note="34.21 shipping · 28.95 import"
-          icon={<Ship />}
+          label="Active Etsy catalog"
+          value={`${listings.length} listings · ${etsyQuantity} units`}
+          note={
+            averagePrice.gt(0)
+              ? `${formatMoney(averagePrice, "USD")} average buyer price`
+              : "No active USD prices"
+          }
+          icon={<Package />}
         />
         <Metric
-          label="Product cost"
-          value="Not entered"
-          note="Add native TRY costs"
-          icon={<Package />}
-          warning
+          label="Recorded physical stock"
+          value={`${availableUnits} finished units`}
+          note={`${materials} raw materials · ${products.length} product records`}
+          icon={<Ship />}
         />
       </section>
-      <section className="grid gap-5 xl:grid-cols-[1.45fr_.75fr]">
+
+      <section className="grid gap-5 xl:grid-cols-[1.4fr_.8fr]">
         <div className="card p-5 sm:p-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="eyebrow">Performance</p>
-              <h2 className="mt-1 text-xl font-semibold">
-                Revenue & estimated profit
-              </h2>
-            </div>
-            <div className="flex gap-3 text-xs">
-              <span className="text-jade">● Revenue</span>
-              <span className="text-coral">● Profit</span>
-            </div>
-          </div>
-          <DashboardChart />
+          <p className="eyebrow">Actual saved snapshots</p>
+          <h2 className="mt-1 text-xl font-semibold">
+            Revenue & estimated profit
+          </h2>
+          <DashboardChart data={chartData} />
           <p className="text-xs text-stone-400">
-            Illustrative trend until completed order snapshots are recorded.
+            Months without completed order snapshots remain zero.
           </p>
         </div>
-        <div className="card overflow-hidden">
-          <div className="border-b border-stone-100 p-5">
-            <p className="eyebrow">Price intelligence</p>
-            <h2 className="mt-1 text-xl font-semibold">$150 US · DDP</h2>
-          </div>
-          <div className="space-y-0 px-5 py-2">
-            <Breakdown
-              label="Etsy fees + fee VAT"
-              value={result.totals.totalEtsyFees.toFixed(2)}
-              color="bg-coral"
-            />
-            <Breakdown
-              label="ShipEntegra quote"
-              value="34.21"
-              color="bg-[#e4a853]"
-            />
-            <Breakdown
-              label="Customs & tariffs"
-              value="28.95"
-              color="bg-[#9c7bba]"
-            />
-            <Breakdown
-              label="Est. after reserves"
-              value={profit.toFixed(2)}
-              color="bg-jade"
-            />
-          </div>
-          <Link
-            href="/calculator"
-            className="m-5 flex items-center justify-between rounded-xl bg-cream px-4 py-3 text-sm font-medium text-jade"
-          >
-            Inspect every formula <ArrowRight size={16} />
-          </Link>
-        </div>
-      </section>
-      <section className="grid gap-5 lg:grid-cols-3">
-        <div className="card p-5 lg:col-span-2">
-          <div className="flex items-center gap-2">
-            <Sparkles className="text-coral" size={18} />
-            <h2 className="font-semibold">Assumptions needing attention</h2>
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <Alert
-              title="Product cost is empty"
-              body="Enter material, labor and packaging in TRY before relying on the profit result."
-            />
-            <Alert
-              title="Manual exchange rate"
-              body="The example uses a 40.00 USD/TRY immutable rate snapshot."
-            />
-          </div>
-        </div>
         <div className="card p-5">
-          <p className="eyebrow">Quote status</p>
-          <div className="mt-4 flex items-center justify-between">
-            <div>
-              <p className="font-medium">US · ShipEntegra Express</p>
-              <p className="mt-1 text-xs text-stone-500">
-                DDP · 1.68 kg billable
-              </p>
-            </div>
-            <span className="pill border-emerald-200 bg-emerald-50 text-emerald-700">
-              DDP
-            </span>
-          </div>
-          <div className="mt-4 border-t pt-4 text-sm">
-            <span className="text-stone-500">Customs example</span>
-            <strong className="float-right">$28.95</strong>
-          </div>
+          <p className="eyebrow">Current planning evidence</p>
+          <DataRow label="USD/TRY" value={`${rate.rate} · ${rate.asOf}`} />
+          <DataRow
+            label="Shipping default"
+            value={
+              shipping
+                ? `${shipping.shippingCost.toFixed(2)} ${shipping.shippingCurrency}`
+                : "Not saved"
+            }
+          />
+          <DataRow
+            label="Customs estimate"
+            value={
+              customsTotal ? `${customsTotal.toFixed(2)} USD` : "Not saved"
+            }
+          />
+          <DataRow
+            label="Monthly goal"
+            value={
+              activeGoal
+                ? `${activeGoal.targetProfitAmount.toFixed(2)} ${activeGoal.targetProfitCurrency}`
+                : "Not saved"
+            }
+          />
         </div>
       </section>
-      <section className="grid gap-5 xl:grid-cols-3">
-        <div className="card p-5"><p className="eyebrow">Business</p><h2 className="mt-2 font-semibold">{business?.legalName ?? "Profile missing"}</h2><p className="mt-2 text-sm text-stone-500">{business?.status.replaceAll("_", " ") ?? "Create an active profile"} · {formationOpen} formation items open</p></div>
-        <div className="card p-5"><p className="eyebrow">Sales & cash records</p><h2 className="mt-2 font-semibold">{ordersThisMonth} orders this month</h2><p className="mt-2 text-sm text-stone-500">{pendingOrders} pending · {expensesThisMonth} expense records</p></div>
-        <div className="card p-5"><p className="eyebrow">Goal</p><h2 className="mt-2 font-semibold">{activeGoal ? `${activeGoal.targetProfitAmount.toFixed(2)} ${activeGoal.targetProfitCurrency}` : "No active goal"}</h2><p className="mt-2 text-sm text-stone-500">{activeGoal?.planningMode.replaceAll("_", " ") ?? "Create a monthly goal"}</p></div>
-        <div className="card p-5"><p className="eyebrow">Documents & liabilities</p><h2 className="mt-2 font-semibold">{missingDocuments} documents need verification</h2><p className="mt-2 text-sm text-stone-500">{taxDue} upcoming tax obligations</p></div>
-        <div className="card p-5"><p className="eyebrow">Inventory</p><h2 className="mt-2 font-semibold">{availableUnits} finished units available</h2><p className="mt-2 text-sm text-stone-500">Material balances are tracked by purchase lot.</p></div>
-        <div className="card p-5"><p className="eyebrow">Reconciliation</p><h2 className="mt-2 font-semibold">{unmatchedLedger + unmatchedBank} items need review</h2><p className="mt-2 text-sm text-stone-500">{unmatchedLedger} Etsy ledger · {unmatchedBank} bank</p></div>
+
+      <section className="grid gap-4 lg:grid-cols-3">
+        <Status
+          title="Product costing"
+          value={
+            missingCosts
+              ? `${missingCosts} products need a cost version`
+              : "All products have a cost version"
+          }
+          warning={missingCosts > 0}
+          href="/products"
+        />
+        <Status
+          title="Sales plan"
+          value={
+            activeGoal
+              ? `${ordersThisMonth} orders this month · goal linked`
+              : "No goal overlaps this month"
+          }
+          warning={!activeGoal}
+          href="/sales-plan"
+        />
+        <Status
+          title="Inventory reconciliation"
+          value={`${etsyQuantity} Etsy quantity · ${availableUnits} recorded physical`}
+          warning={etsyQuantity !== availableUnits}
+          href="/inventory"
+        />
+        <Status
+          title="Open orders"
+          value={`${pendingOrders} pending local orders`}
+          href="/orders"
+        />
+        <Status
+          title="Shipping"
+          value={
+            shipping
+              ? "Dated planning quote available"
+              : "No planning-default quote"
+          }
+          warning={!shipping}
+          href="/shipping"
+        />
+        <Status
+          title="Customs"
+          value={
+            customs ? "Dated estimate available" : "No dated customs estimate"
+          }
+          warning={!customs}
+          href="/customs"
+        />
       </section>
     </div>
   );
+}
+
+function sum(values: Array<{ toString(): string }>): Decimal {
+  return values.reduce<Decimal>(
+    (total, value) => total.plus(value.toString()),
+    new Decimal(0),
+  );
+}
+
+function chartPoints(
+  now: Date,
+  snapshots: Array<{
+    calculatedAt: Date;
+    grossRevenueUsd: { toString(): string };
+    estimatedProfitUsd: { toString(): string };
+  }>,
+): DashboardChartPoint[] {
+  return Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5 + index, 1),
+    );
+    const next = new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1),
+    );
+    const rows = snapshots.filter(
+      (snapshot) =>
+        snapshot.calculatedAt >= date && snapshot.calculatedAt < next,
+    );
+    return {
+      month: date.toLocaleDateString("en-GB", { month: "short" }),
+      revenue: sum(rows.map((row) => row.grossRevenueUsd)).toNumber(),
+      profit: sum(rows.map((row) => row.estimatedProfitUsd)).toNumber(),
+    };
+  });
 }
 
 function Metric({
@@ -197,27 +356,25 @@ function Metric({
   note,
   icon,
   accent,
-  warning,
 }: {
   label: string;
   value: string;
   note: string;
   icon: React.ReactNode;
   accent?: boolean;
-  warning?: boolean;
 }) {
   return (
     <article className={`card p-5 ${accent ? "bg-[#18342e] text-white" : ""}`}>
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
           <p
-            className={`text-xs font-medium ${accent ? "text-white/55" : "text-stone-500"}`}
+            className={`text-xs ${accent ? "text-white/55" : "text-stone-500"}`}
           >
             {label}
           </p>
-          <p className="mt-3 text-2xl font-semibold tracking-tight">{value}</p>
+          <p className="mt-3 text-2xl font-semibold">{value}</p>
           <p
-            className={`mt-1 text-xs ${warning ? "text-amber-700" : accent ? "text-[#dbe8b6]" : "text-stone-400"}`}
+            className={`mt-1 text-xs ${accent ? "text-[#dbe8b6]" : "text-stone-400"}`}
           >
             {note}
           </p>
@@ -231,33 +388,40 @@ function Metric({
     </article>
   );
 }
-function Breakdown({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: string;
-  color: string;
-}) {
+
+function DataRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center gap-3 border-b border-stone-100 py-3.5 last:border-0">
-      <span className={`h-2 w-2 rounded-full ${color}`} />
-      <span className="flex-1 text-sm text-stone-600">{label}</span>
-      <strong className="text-sm">${value}</strong>
+    <div className="flex items-center justify-between gap-4 border-b py-3 text-sm last:border-0">
+      <span className="text-stone-500">{label}</span>
+      <strong className="text-right">{value}</strong>
     </div>
   );
 }
-function Alert({ title, body }: { title: string; body: string }) {
+
+function Status({
+  title,
+  value,
+  warning = false,
+  href,
+}: {
+  title: string;
+  value: string;
+  warning?: boolean;
+  href: string;
+}) {
   return (
-    <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
-      <div className="flex gap-2">
-        <CircleAlert className="mt-0.5 shrink-0 text-amber-700" size={16} />
-        <div>
-          <p className="text-sm font-medium text-amber-900">{title}</p>
-          <p className="mt-1 text-xs leading-5 text-amber-800/75">{body}</p>
-        </div>
+    <Link
+      href={href}
+      className={`card block p-5 ${warning ? "border-amber-200 bg-amber-50/50" : ""}`}
+    >
+      <div className="flex items-center gap-2">
+        <CircleAlert
+          size={16}
+          className={warning ? "text-amber-700" : "text-emerald-700"}
+        />
+        <h2 className="font-semibold">{title}</h2>
       </div>
-    </div>
+      <p className="mt-2 text-sm text-stone-500">{value}</p>
+    </Link>
   );
 }

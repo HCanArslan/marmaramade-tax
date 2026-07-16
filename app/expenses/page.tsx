@@ -1,6 +1,212 @@
-import { createExpenseAction, createFixedAssetAction, createRecurringExpenseAction } from "@/app/actions/operations";
+import {
+  createExpenseAction,
+  createFixedAssetAction,
+  createRecurringExpenseAction,
+} from "@/app/actions/operations";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { prisma } from "@/lib/prisma";
 
-export default async function ExpensesPage(){await requireAdmin({redirectTo:"/expenses"});const profile=await prisma.businessProfile.findFirst({where:{active:true},orderBy:{effectiveFrom:"desc"}});if(!profile)return <p className="card p-6">Create an active business profile first.</p>;const [expenses,recurring,assets]=await Promise.all([prisma.expense.findMany({where:{businessProfileId:profile.id,deletedAt:null},orderBy:{expenseDate:"desc"},take:100}),prisma.recurringExpense.findMany({where:{businessProfileId:profile.id,active:true},orderBy:{createdAt:"desc"}}),prisma.fixedAsset.findMany({where:{businessProfileId:profile.id},orderBy:{acquisitionDate:"desc"}})]);return <div className="mx-auto max-w-7xl space-y-6"><header><p className="eyebrow">Documented cash and planning costs</p><h1 className="mt-2 text-3xl font-semibold">Expenses & assets</h1></header><div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Expense and VAT deductibility remain UNKNOWN until reviewed. The application does not infer official depreciation.</div><section className="card p-5"><h2 className="font-semibold">Record expense</h2><form action={createExpenseAction} className="mt-4 grid gap-3 md:grid-cols-4"><H id={profile.id}/><I n="expenseDate" p="Date" t="date"/><I n="supplierName" p="Supplier" r={false}/><I n="description" p="Description"/><S n="category" v={["MATERIALS","PACKAGING","SHIPPING","CUSTOMS","MARKETPLACE_FEES","ETSY_ADS","BANK_FEES","ACCOUNTANT","SOFTWARE","EQUIPMENT","SGK","BAGKUR","TAX","OTHER"]}/><I n="subcategory" p="Subcategory" r={false}/><I n="netAmount" p="Net"/><I n="vatAmount" p="VAT" v="0"/><I n="grossAmount" p="Gross"/><I n="currency" p="Currency" v="TRY"/><I n="exchangeRate" p="FX to TRY" r={false}/><I n="grossAmountTry" p="Gross TRY"/><S n="paymentStatus" v={["UNPAID","PAID","PARTIALLY_PAID","REFUNDED"]}/><I n="documentType" p="Document type" r={false}/><I n="documentNumber" p="Document no." r={false}/><B/></form></section><section className="grid gap-5 xl:grid-cols-2"><Box title="Recurring expense"><form action={createRecurringExpenseAction} className="grid gap-3 sm:grid-cols-2"><H id={profile.id}/><I n="name" p="Name"/><I n="category" p="Category"/><I n="expectedAmount" p="Expected amount"/><I n="currency" p="Currency" v="TRY"/><I n="recurrenceRule" p="Rule" v="MONTHLY"/><I n="nextDueAt" p="Next due" t="date" r={false}/><B/></form></Box><Box title="Fixed asset"><form action={createFixedAssetAction} className="grid gap-3 sm:grid-cols-2"><H id={profile.id}/><I n="name" p="Name"/><I n="category" p="Category"/><I n="acquisitionDate" p="Acquired" t="date"/><I n="acquisitionCost" p="Native cost"/><I n="currency" p="Currency" v="TRY"/><I n="acquisitionCostTry" p="Cost TRY"/><I n="carryingValue" p="Planning carrying value"/><I n="usefulLifeMonths" p="Useful months" r={false}/><B/></form></Box></section><section className="grid gap-5 lg:grid-cols-3"><Rows title="Expenses" rows={expenses.map(e=>`${e.expenseDate.toLocaleDateString("en-GB")} · ${e.description} · ${e.grossAmount.toFixed(2)} ${e.currency} · ${e.deductibilityStatus}`)}/><Rows title="Recurring" rows={recurring.map(e=>`${e.name} · ${e.expectedAmount.toFixed(2)} ${e.currency} · ${e.recurrenceRule}`)}/><Rows title="Assets" rows={assets.map(a=>`${a.name} · ${a.acquisitionCostTry.toFixed(2)} TRY · ${a.accountantReviewStatus}`)}/></section></div>}
-const H=({id}:{id:string})=><input type="hidden" name="businessProfileId" value={id}/>;const I=({n,p,v,r=true,t="text"}:{n:string;p:string;v?:string;r?:boolean;t?:string})=><input aria-label={p} className="field" name={n} placeholder={p} defaultValue={v} required={r} type={t}/>;const S=({n,v}:{n:string;v:string[]})=><select className="field" name={n}>{v.map(x=><option key={x}>{x}</option>)}</select>;const B=()=> <button className="rounded-xl bg-jade px-4 py-2 text-sm text-white">Save</button>;const Box=({title,children}:{title:string;children:React.ReactNode})=><section className="card p-5"><h2 className="font-semibold">{title}</h2><div className="mt-4">{children}</div></section>;const Rows=({title,rows}:{title:string;rows:string[]})=><Box title={title}><div className="space-y-2 text-sm">{rows.map((r,i)=><p className="rounded border p-3" key={i}>{r}</p>)}{!rows.length&&<p className="text-stone-500">No records.</p>}</div></Box>;
+export default async function ExpensesPage() {
+  await requireAdmin({ redirectTo: "/expenses" });
+  const profile = await prisma.businessProfile.findFirst({
+    where: { active: true },
+    orderBy: { effectiveFrom: "desc" },
+  });
+  if (!profile)
+    return <p className="card p-6">Create an active business profile first.</p>;
+  const [expenses, recurring, assets] = await Promise.all([
+    prisma.expense.findMany({
+      where: { businessProfileId: profile.id, deletedAt: null },
+      orderBy: { expenseDate: "desc" },
+      take: 100,
+    }),
+    prisma.recurringExpense.findMany({
+      where: { businessProfileId: profile.id, active: true },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.fixedAsset.findMany({
+      where: { businessProfileId: profile.id },
+      orderBy: { acquisitionDate: "desc" },
+    }),
+  ]);
+  return (
+    <div className="mx-auto max-w-7xl space-y-6">
+      <header>
+        <p className="eyebrow">Documented cash and planning costs</p>
+        <h1 className="mt-2 text-3xl font-semibold">Expenses & assets</h1>
+      </header>
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        Expense and VAT deductibility remain UNKNOWN until reviewed. The
+        application does not infer official depreciation.
+      </div>
+      <section className="card p-5">
+        <h2 className="font-semibold">Record expense</h2>
+        <form
+          action={createExpenseAction}
+          className="mt-4 grid gap-3 md:grid-cols-4"
+        >
+          <H id={profile.id} />
+          <I n="expenseDate" p="Date" t="date" />
+          <I n="supplierName" p="Supplier" r={false} />
+          <I n="description" p="Description" />
+          <S
+            n="category"
+            v={[
+              "MATERIALS",
+              "PACKAGING",
+              "SHIPPING",
+              "CUSTOMS",
+              "MARKETPLACE_FEES",
+              "ETSY_ADS",
+              "BANK_FEES",
+              "ACCOUNTANT",
+              "SOFTWARE",
+              "EQUIPMENT",
+              "SGK",
+              "BAGKUR",
+              "TAX",
+              "OTHER",
+            ]}
+          />
+          <I n="subcategory" p="Subcategory" r={false} />
+          <I n="netAmount" p="Net" />
+          <I n="vatAmount" p="VAT" v="0" />
+          <I n="grossAmount" p="Gross" />
+          <I n="currency" p="Currency" v="TRY" />
+          <I n="exchangeRate" p="FX to TRY" r={false} />
+          <I n="grossAmountTry" p="Gross TRY" />
+          <S
+            n="paymentStatus"
+            v={["UNPAID", "PAID", "PARTIALLY_PAID", "REFUNDED"]}
+          />
+          <I n="documentType" p="Document type" r={false} />
+          <I n="documentNumber" p="Document no." r={false} />
+          <B />
+        </form>
+      </section>
+      <section className="grid gap-5 xl:grid-cols-2">
+        <Box title="Recurring expense">
+          <form
+            action={createRecurringExpenseAction}
+            className="grid gap-3 sm:grid-cols-2"
+          >
+            <H id={profile.id} />
+            <I n="name" p="Name" />
+            <I n="category" p="Category" />
+            <I n="expectedAmount" p="Expected amount" />
+            <I n="currency" p="Currency" v="TRY" />
+            <I n="recurrenceRule" p="Rule" v="MONTHLY" />
+            <I n="nextDueAt" p="Next due" t="date" r={false} />
+            <B />
+          </form>
+        </Box>
+        <Box title="Fixed asset">
+          <form
+            action={createFixedAssetAction}
+            className="grid gap-3 sm:grid-cols-2"
+          >
+            <H id={profile.id} />
+            <I n="name" p="Name" />
+            <I n="category" p="Category" />
+            <I n="acquisitionDate" p="Acquired" t="date" />
+            <I n="acquisitionCost" p="Native cost" />
+            <I n="currency" p="Currency" v="TRY" />
+            <I n="acquisitionCostTry" p="Cost TRY" />
+            <I n="carryingValue" p="Planning carrying value" />
+            <I n="usefulLifeMonths" p="Useful months" r={false} />
+            <B />
+          </form>
+        </Box>
+      </section>
+      <section className="grid gap-5 lg:grid-cols-3">
+        <Rows
+          title="Expenses"
+          rows={expenses.map(
+            (e) =>
+              `${e.expenseDate.toLocaleDateString("en-GB")} · ${e.description} · ${e.grossAmount.toFixed(2)} ${e.currency} · ${e.deductibilityStatus}`,
+          )}
+        />
+        <Rows
+          title="Recurring"
+          rows={recurring.map(
+            (e) =>
+              `${e.name} · ${e.expectedAmount.toFixed(2)} ${e.currency} · ${e.recurrenceRule}`,
+          )}
+        />
+        <Rows
+          title="Assets"
+          rows={assets.map(
+            (a) =>
+              `${a.name} · ${a.acquisitionCostTry.toFixed(2)} TRY · ${a.accountantReviewStatus}`,
+          )}
+        />
+      </section>
+    </div>
+  );
+}
+const H = ({ id }: { id: string }) => (
+  <input type="hidden" name="businessProfileId" value={id} />
+);
+const I = ({
+  n,
+  p,
+  v,
+  r = true,
+  t = "text",
+}: {
+  n: string;
+  p: string;
+  v?: string;
+  r?: boolean;
+  t?: string;
+}) => (
+  <label className="text-xs text-stone-500">
+    {p}
+    <input
+      className="field mt-1"
+      name={n}
+      defaultValue={v}
+      required={r}
+      type={t}
+    />
+  </label>
+);
+const S = ({ n, v }: { n: string; v: string[] }) => (
+  <label className="text-xs text-stone-500">
+    {n.replaceAll(/([A-Z])/g, " $1").trim()}
+    <select className="field mt-1" name={n}>
+      {v.map((x) => (
+        <option key={x}>{x}</option>
+      ))}
+    </select>
+  </label>
+);
+const B = () => (
+  <button className="rounded-xl bg-jade px-4 py-2 text-sm text-white">
+    Save
+  </button>
+);
+const Box = ({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) => (
+  <section className="card p-5">
+    <h2 className="font-semibold">{title}</h2>
+    <div className="mt-4">{children}</div>
+  </section>
+);
+const Rows = ({ title, rows }: { title: string; rows: string[] }) => (
+  <Box title={title}>
+    <div className="space-y-2 text-sm">
+      {rows.map((r, i) => (
+        <p className="rounded border p-3" key={i}>
+          {r}
+        </p>
+      ))}
+      {!rows.length && <p className="text-stone-500">No records.</p>}
+    </div>
+  </Box>
+);

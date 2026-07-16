@@ -121,14 +121,17 @@ const I = ({
   r?: boolean;
   t?: string;
 }) => (
-  <input
-    className="field"
-    name={n}
-    placeholder={p}
-    defaultValue={v}
-    required={r}
-    type={t}
-  />
+  <label className="text-xs text-stone-500">
+    {p}
+    <input
+      className="field mt-1"
+      name={n}
+      defaultValue={v}
+      required={r}
+      type={t}
+      step={t === "number" ? "0.01" : undefined}
+    />
+  </label>
 );
 const B = () => (
   <button className="rounded-xl bg-jade px-4 py-2 text-sm text-white">

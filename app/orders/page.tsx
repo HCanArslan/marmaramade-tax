@@ -198,47 +198,40 @@ export default async function OrdersPage() {
                 >
                   <input type="hidden" name="orderId" value={o.id} />
                   <input type="hidden" name="snapshotId" value={s.id} />
-                  <input
-                    className="field"
+                  <Field
                     name="category"
-                    placeholder="Actual shipping"
-                    required
+                    label="Adjustment category"
+                    value="Actual shipping"
                   />
-                  <input
-                    className="field"
-                    name="amount"
-                    type="number"
-                    step="0.01"
-                    placeholder="Amount"
-                    required
-                  />
-                  <select className="field" name="currency">
-                    <option>USD</option>
-                    <option>TRY</option>
-                  </select>
-                  <input
-                    className="field"
-                    name="exchangeRate"
-                    type="number"
-                    step="0.0001"
-                    defaultValue={
-                      s.exchangeRateSnapshotId
-                        ? rates
-                            .find((r) => r.id === s.exchangeRateSnapshotId)
-                            ?.rate.toString()
-                        : "1"
-                    }
-                  />
-                  <input
-                    className="field"
-                    name="reason"
-                    placeholder="Reason"
-                    required
-                  />
-                  <input
-                    className="field"
+                  <Field name="amount" label="Actual amount" type="number" />
+                  <label className="text-xs text-stone-500">
+                    Currency
+                    <select className="field mt-1" name="currency">
+                      <option>USD</option>
+                      <option>TRY</option>
+                    </select>
+                  </label>
+                  <label className="text-xs text-stone-500">
+                    USD/TRY rate used
+                    <input
+                      className="field mt-1"
+                      name="exchangeRate"
+                      type="number"
+                      step="0.0001"
+                      defaultValue={
+                        s.exchangeRateSnapshotId
+                          ? rates
+                              .find((r) => r.id === s.exchangeRateSnapshotId)
+                              ?.rate.toString()
+                          : "1"
+                      }
+                    />
+                  </label>
+                  <Field name="reason" label="Reason for adjustment" />
+                  <Field
                     name="evidenceNote"
-                    placeholder="Evidence note"
+                    label="Evidence note (optional)"
+                    required={false}
                   />
                   <button className="rounded-xl border bg-white px-3 text-xs">
                     Add actual adjustment

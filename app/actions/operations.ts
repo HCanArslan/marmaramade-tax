@@ -508,27 +508,56 @@ export async function createProductionUnitAction(formData: FormData) {
       localSku: text,
       serialNumber: optionalText,
       oneOfOne: checkbox,
-      productCostSnapshot: z.string().trim().min(2),
+      etsyListingId: optionalText,
+      notes: optionalText,
     })
     .parse(Object.fromEntries(formData));
-  const snapshot = z
-    .record(z.string(), z.unknown())
-    .parse(JSON.parse(value.productCostSnapshot)) as Prisma.InputJsonValue;
-  const unit = await prisma.productionUnit.create({
-    data: {
-      batchId: value.batchId,
-      localSku: value.localSku,
-      serialNumber: value.serialNumber,
-      oneOfOne: value.oneOfOne,
-      productCostSnapshot: snapshot,
-      completedAt: new Date(),
-      qualityStatus: "PASSED",
-      inventoryStatus: "AVAILABLE",
-    },
-  });
-  await prisma.productionBatch.update({
-    where: { id: value.batchId },
-    data: { completedQuantity: { increment: 1 } },
+  const unit = await prisma.$transaction(async (tx) => {
+    const batch = await tx.productionBatch.findUniqueOrThrow({
+      where: { id: value.batchId },
+    });
+    const cost = await tx.productCostVersion.findFirst({
+      where: { productId: batch.productTemplateId },
+      orderBy: { effectiveFrom: "desc" },
+    });
+    const snapshot = {
+      productId: batch.productTemplateId,
+      productCostVersionId: cost?.id ?? null,
+      materialCostTry: cost?.materialCostTry.toString() ?? "0",
+      laborHours: cost?.laborHours.toString() ?? "0",
+      laborHourlyRateTry: cost?.laborHourlyRateTry.toString() ?? "0",
+      packagingCostTry: cost?.packagingCostTry.toString() ?? "0",
+      additionalDirectCostTry: cost?.additionalDirectCostTry.toString() ?? "0",
+      capturedAt: new Date().toISOString(),
+      warning: cost
+        ? null
+        : "No product cost version existed when this unit was completed.",
+    } satisfies Prisma.InputJsonObject;
+    const created = await tx.productionUnit.create({
+      data: {
+        batchId: value.batchId,
+        localSku: value.localSku,
+        serialNumber: value.serialNumber,
+        oneOfOne: value.oneOfOne,
+        etsyListingId: value.etsyListingId,
+        notes: value.notes,
+        productCostSnapshot: snapshot,
+        completedAt: new Date(),
+        qualityStatus: "PASSED",
+        inventoryStatus: "AVAILABLE",
+      },
+    });
+    const completedQuantity = batch.completedQuantity + 1;
+    await tx.productionBatch.update({
+      where: { id: value.batchId },
+      data: {
+        completedQuantity,
+        ...(completedQuantity >= batch.plannedQuantity
+          ? { status: "COMPLETED", completionDate: new Date() }
+          : { status: "IN_PROGRESS" }),
+      },
+    });
+    return created;
   });
   await audit({
     entityType: "ProductionUnit",
@@ -539,6 +568,8 @@ export async function createProductionUnitAction(formData: FormData) {
   });
   revalidatePath("/production");
   revalidatePath("/inventory");
+  revalidatePath("/calculator");
+  revalidatePath("/");
 }
 
 export async function createSalesDocumentAction(formData: FormData) {

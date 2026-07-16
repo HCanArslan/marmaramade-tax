@@ -34,12 +34,12 @@ describe("MarmaraMade calculation engine", () => {
     expect(
       calc().lines.find((l) => l.name === "Transaction fee")?.nativeAmount,
     ).toBe("9.75"));
-  it("keeps 7% processing and 14 TRY separate", () => {
+  it("keeps 6.5% Türkiye processing and 14 TRY separate", () => {
     const r = calc();
     expect(
       r.lines.find((l) => l.name === "Payment processing percentage")
         ?.nativeAmount,
-    ).toBe("10.5");
+    ).toBe("9.75");
     expect(
       r.lines.find((l) => l.name === "Payment processing fixed")?.nativeAmount,
     ).toBe("14");
@@ -87,7 +87,9 @@ describe("MarmaraMade calculation engine", () => {
     ).toMatchObject({ nativeAmount: "250", nativeCurrency: "TRY" }));
   it("preserves native USD values", () =>
     expect(
-      calc().lines.find((l) => l.name === "International shipping"),
+      calc({ internationalShippingUsd: "34.21" }).lines.find(
+        (l) => l.name === "International shipping",
+      ),
     ).toMatchObject({ nativeAmount: "34.21", nativeCurrency: "USD" }));
   it("verifies the US customs example as 28.95 USD", () => {
     const q = customsTotal({
@@ -100,8 +102,13 @@ describe("MarmaraMade calculation engine", () => {
     expect(q.tariff.toNumber()).toBe(15);
     expect(q.total.toNumber()).toBe(28.95);
   });
-  it("preserves the 34.21 USD shipping quote", () =>
-    expect(n(calc().totals.internationalShippingUsd)).toBe(34.21));
+  it("preserves a supplied 34.21 USD shipping quote", () =>
+    expect(
+      n(
+        calc({ internationalShippingUsd: "34.21" }).totals
+          .internationalShippingUsd,
+      ),
+    ).toBe(34.21));
   it("calculates volumetric and billable weight", () =>
     expect(volumetricWeight(40, 30, 7, 5000).toNumber()).toBe(1.68));
   it("solves reverse price for desired profit", () => {
