@@ -9,3 +9,9 @@ prisma/*.db
 prisma/*.db-journal
 coverage
 *.tsbuildinfo
+
+.vercel/
+.env.local
+.env.*.local
+
+.env*

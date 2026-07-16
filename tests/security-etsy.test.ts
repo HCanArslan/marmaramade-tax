@@ -97,6 +97,12 @@ describe("single-admin security", () => {
       "app/reconciliation/page.tsx",
       "app/settings/security/page.tsx",
       "app/settings/etsy/page.tsx",
+      "app/documents/page.tsx",
+      "app/compliance/page.tsx",
+      "app/goals/page.tsx",
+      "app/tax-exemption/page.tsx",
+      "app/orders/[id]/page.tsx",
+      "app/reports/print/page.tsx",
     ];
     for (const file of files)
       expect(await source(file), file).toContain("requireAdmin(");
@@ -110,6 +116,7 @@ describe("single-admin security", () => {
       "app/actions/etsy.ts",
       "app/actions/listings.ts",
       "app/actions/import-receipt.ts",
+      "app/actions/ledger.ts",
     ])
       expect(await source(file), file).toContain("requireAdmin(");
   });
