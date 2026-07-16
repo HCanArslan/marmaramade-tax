@@ -472,6 +472,39 @@ export async function createProfitGoalAction(formData: FormData) {
   redirect(`/goals?created=${goal.id}`);
 }
 
+export async function deleteProfitGoalAction(formData: FormData) {
+  const actor = await adminActor("/goals");
+  const id = text.parse(formData.get("id"));
+  const goal = await prisma.profitGoal.findUniqueOrThrow({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      targetProfitAmount: true,
+      targetProfitCurrency: true,
+    },
+  });
+  await prisma.$transaction(async (tx) => {
+    await tx.profitGoal.delete({ where: { id } });
+    await tx.auditLog.create({
+      data: {
+        entityType: "ProfitGoal",
+        entityId: id,
+        action: "DELETED",
+        actor,
+        beforeJson: JSON.stringify({
+          name: goal.name,
+          target: goal.targetProfitAmount.toString(),
+          currency: goal.targetProfitCurrency,
+        }),
+      },
+    });
+  });
+  revalidatePath("/goals");
+  revalidatePath("/sales-plan");
+  revalidatePath("/");
+}
+
 export async function uploadDocumentAction(formData: FormData) {
   const actor = await adminActor("/documents");
   const file = formData.get("file");
@@ -768,6 +801,153 @@ export async function createFeeProfileAction(formData: FormData) {
       },
     });
     return p;
+  });
+  redirect(`/fees?created=${profile.id}`);
+}
+
+export async function createOfficialEtsyTurkeyFeeProfileAction() {
+  const actor = await adminActor("/fees");
+  const effectiveFrom = new Date("2026-01-01T00:00:00.000Z");
+  const existing = await prisma.feeProfile.findUnique({
+    where: {
+      marketplace_country_effectiveFrom: {
+        marketplace: "Etsy",
+        country: "TR",
+        effectiveFrom,
+      },
+    },
+  });
+  if (existing) redirect(`/fees?created=${existing.id}`);
+
+  const feePolicy = "https://www.etsy.com/legal/fees/";
+  const paymentsPolicy = "https://www.etsy.com/legal/etsy-payments";
+  const regulatoryPolicy =
+    "https://help.etsy.com/hc/en-us/articles/1500011073202-What-is-a-Regulatory-Operating-Fee";
+  const profile = await prisma.$transaction(async (tx) => {
+    const created = await tx.feeProfile.create({
+      data: {
+        marketplace: "Etsy",
+        name: "Etsy Türkiye main planning profile (2026)",
+        country: "TR",
+        effectiveFrom,
+        listingCurrency: "USD",
+        payoutCurrency: "TRY",
+        notes:
+          "Official Etsy rates checked 2026-07-16. VAT treatment, Offsite Ads eligibility, currency conversion, and deposit fees remain conditional and must be reconciled to Etsy ledger entries.",
+        rules: {
+          create: [
+            {
+              name: "Listing / renewal fee",
+              category: "LISTING",
+              calculationType: "FIXED",
+              fixedAmount: "0.20",
+              fixedCurrency: "USD",
+              calculationBase: "PER_LISTING_OR_RENEWAL",
+              vatApplicable: true,
+              vatRate: "20",
+              effectiveFrom,
+              sourceUrl: feePolicy,
+            },
+            {
+              name: "Transaction fee",
+              category: "TRANSACTION",
+              calculationType: "PERCENTAGE",
+              percentageRate: "6.5",
+              calculationBase: "ITEM_PLUS_SHIPPING_PLUS_GIFT_WRAP",
+              vatApplicable: true,
+              vatRate: "20",
+              effectiveFrom,
+              sourceUrl: feePolicy,
+            },
+            {
+              name: "Etsy Payments percentage",
+              category: "PAYMENT_PROCESSING_PERCENT",
+              calculationType: "PERCENTAGE",
+              percentageRate: "6.5",
+              calculationBase: "TOTAL_PAYMENT_INCLUDING_SHIPPING_AND_TAX",
+              vatApplicable: true,
+              vatRate: "20",
+              effectiveFrom,
+              sourceUrl: paymentsPolicy,
+            },
+            {
+              name: "Etsy Payments fixed",
+              category: "PAYMENT_PROCESSING_FIXED",
+              calculationType: "FIXED",
+              fixedAmount: "14",
+              fixedCurrency: "TRY",
+              calculationBase: "PER_ORDER",
+              vatApplicable: true,
+              vatRate: "20",
+              effectiveFrom,
+              sourceUrl: paymentsPolicy,
+            },
+            {
+              name: "Regulatory operating fee",
+              category: "REGULATORY",
+              calculationType: "PERCENTAGE",
+              percentageRate: "1.67",
+              calculationBase: "ITEM_PLUS_SHIPPING_PLUS_GIFT_WRAP",
+              vatApplicable: true,
+              vatRate: "20",
+              effectiveFrom,
+              sourceUrl: regulatoryPolicy,
+            },
+            {
+              name: "Currency conversion (conditional)",
+              category: "CURRENCY_CONVERSION",
+              calculationType: "PERCENTAGE",
+              percentageRate: "2.5",
+              calculationBase:
+                "ONLY_WHEN_LISTING_AND_PAYMENT_CURRENCIES_DIFFER",
+              vatApplicable: true,
+              vatRate: "20",
+              effectiveFrom,
+              sourceUrl: feePolicy,
+            },
+            {
+              name: "Offsite Ads conservative rate",
+              category: "OFFSITE_ADS",
+              calculationType: "PERCENTAGE",
+              percentageRate: "15",
+              calculationBase: "ATTRIBUTED_ORDER_ONLY_MAX_100_USD",
+              vatApplicable: true,
+              vatRate: "20",
+              effectiveFrom,
+              sourceUrl: feePolicy,
+              notes:
+                "Use 12% instead when the shop qualifies for Etsy's lower established-seller rate; reconcile from actual ledger.",
+            },
+            {
+              name: "Low-deposit fee (conditional)",
+              category: "DEPOSIT",
+              calculationType: "FIXED",
+              fixedAmount: "42",
+              fixedCurrency: "TRY",
+              calculationBase: "DEPOSIT_ABOVE_50_AND_BELOW_600_TRY",
+              vatApplicable: true,
+              vatRate: "20",
+              effectiveFrom,
+              sourceUrl: paymentsPolicy,
+            },
+          ],
+        },
+      },
+    });
+    await tx.auditLog.create({
+      data: {
+        entityType: "FeeProfile",
+        entityId: created.id,
+        action: "OFFICIAL_TURKEY_PRESET_CREATED",
+        actor,
+        afterJson: JSON.stringify({
+          sourceDate: "2026-07-16",
+          rules: 8,
+          confirmation: "CONDITIONAL_ITEMS_REQUIRE_RECONCILIATION",
+        }),
+      },
+    });
+    return created;
   });
   redirect(`/fees?created=${profile.id}`);
 }

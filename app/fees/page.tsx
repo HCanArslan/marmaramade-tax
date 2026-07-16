@@ -1,6 +1,7 @@
 import {
   createFeeProfileAction,
   createFeeRuleAction,
+  createOfficialEtsyTurkeyFeeProfileAction,
 } from "@/app/actions/ledger";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { prisma } from "@/lib/prisma";
@@ -20,68 +21,94 @@ export default async function FeesPage() {
           planning versions.
         </p>
       </header>
-      <section className="card p-5">
-        <h2 className="font-semibold">New profile and first rule</h2>
+      <section className="card border-emerald-200 bg-emerald-50 p-5">
+        <p className="eyebrow text-emerald-700">Recommended main version</p>
+        <h2 className="mt-2 text-lg font-semibold">
+          Etsy Türkiye official planning profile
+        </h2>
+        <p className="mt-2 max-w-4xl text-sm leading-6 text-emerald-900/75">
+          Creates the current core rules: $0.20 listing, 6.5% transaction, 6.5%
+          + 14 TRY payment processing, 1.67% regulatory operating fee, and
+          conditional currency-conversion, Offsite Ads, and low-deposit fees.
+          VAT eligibility is recorded at 20%, but whether Etsy charges it still
+          follows your submitted VAT ID and accountant-confirmed treatment.
+        </p>
         <form
-          action={createFeeProfileAction}
-          className="mt-4 grid gap-3 md:grid-cols-4"
+          action={createOfficialEtsyTurkeyFeeProfileAction}
+          className="mt-4"
         >
-          {[
-            ["name", "Profile name", "Etsy Türkiye"],
-            ["country", "Country", "TR"],
-            ["listingCurrency", "Listing currency", "USD"],
-            ["payoutCurrency", "Payout currency", "TRY"],
-            ["ruleName", "Rule name", "Transaction fee"],
-            ["category", "Category", "TRANSACTION"],
-            ["percentageRate", "Percentage %", "6.5"],
-            ["fixedAmount", "Fixed amount", "0"],
-            ["fixedCurrency", "Fixed currency", "USD"],
-            ["calculationBase", "Calculation base", "GROSS_SELLER_REVENUE"],
-            ["vatRate", "VAT %", "20"],
-            ["sourceUrl", "Source URL", ""],
-            ["notes", "Notes", ""],
-          ].map(([name, label, value]) => (
-            <label className="text-xs text-stone-500" key={name}>
-              {label}
-              <input
-                className="field mt-1"
-                name={name}
-                defaultValue={value}
-                required={!["sourceUrl", "notes"].includes(name)}
-                type={
-                  ["percentageRate", "fixedAmount", "vatRate"].includes(name)
-                    ? "number"
-                    : "text"
-                }
-                step="0.01"
-              />
-            </label>
-          ))}
-          <label className="text-xs text-stone-500">
-            Effective from
-            <input
-              className="field mt-1"
-              name="effectiveFrom"
-              type="date"
-              required
-            />
-          </label>
-          <label className="text-xs text-stone-500">
-            Calculation type
-            <select className="field mt-1" name="calculationType">
-              <option>PERCENTAGE</option>
-              <option>FIXED</option>
-            </select>
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="vatApplicable" />
-            VAT applicable
-          </label>
-          <button className="rounded-xl bg-jade px-4 py-2 text-sm text-white">
-            Create version
+          <button className="rounded-xl bg-jade px-4 py-2.5 text-sm font-medium text-white">
+            Create main Etsy Türkiye version
           </button>
         </form>
       </section>
+      <details className="card p-5">
+        <summary className="cursor-pointer font-semibold">
+          Advanced: create a custom fee profile
+        </summary>
+        <section className="card p-5">
+          <h2 className="font-semibold">New profile and first rule</h2>
+          <form
+            action={createFeeProfileAction}
+            className="mt-4 grid gap-3 md:grid-cols-4"
+          >
+            {[
+              ["name", "Profile name", "Etsy Türkiye"],
+              ["country", "Country", "TR"],
+              ["listingCurrency", "Listing currency", "USD"],
+              ["payoutCurrency", "Payout currency", "TRY"],
+              ["ruleName", "Rule name", "Transaction fee"],
+              ["category", "Category", "TRANSACTION"],
+              ["percentageRate", "Percentage %", "6.5"],
+              ["fixedAmount", "Fixed amount", "0"],
+              ["fixedCurrency", "Fixed currency", "USD"],
+              ["calculationBase", "Calculation base", "GROSS_SELLER_REVENUE"],
+              ["vatRate", "VAT %", "20"],
+              ["sourceUrl", "Source URL", ""],
+              ["notes", "Notes", ""],
+            ].map(([name, label, value]) => (
+              <label className="text-xs text-stone-500" key={name}>
+                {label}
+                <input
+                  className="field mt-1"
+                  name={name}
+                  defaultValue={value}
+                  required={!["sourceUrl", "notes"].includes(name)}
+                  type={
+                    ["percentageRate", "fixedAmount", "vatRate"].includes(name)
+                      ? "number"
+                      : "text"
+                  }
+                  step="0.01"
+                />
+              </label>
+            ))}
+            <label className="text-xs text-stone-500">
+              Effective from
+              <input
+                className="field mt-1"
+                name="effectiveFrom"
+                type="date"
+                required
+              />
+            </label>
+            <label className="text-xs text-stone-500">
+              Calculation type
+              <select className="field mt-1" name="calculationType">
+                <option>PERCENTAGE</option>
+                <option>FIXED</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="vatApplicable" />
+              VAT applicable
+            </label>
+            <button className="rounded-xl bg-jade px-4 py-2 text-sm text-white">
+              Create version
+            </button>
+          </form>
+        </section>
+      </details>
       {profiles.length > 0 && (
         <section className="card p-5">
           <h2 className="font-semibold">Add rule to existing profile</h2>

@@ -23,8 +23,28 @@ export default async function CustomsPage() {
         </p>
       </header>
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-        Confirm classifications, tariffs, and DDP charges with current official
-        or professional guidance.
+        Start with the product&apos;s material and intended use, then find the
+        classification in the official GTIP tool. Enter rates only from a dated
+        carrier, customs broker, or destination-authority quote. Existing sample
+        guesses are intentionally not used.
+        <div className="mt-2 flex flex-wrap gap-3">
+          <a
+            className="font-medium underline"
+            href="https://dys.ticaret.gov.tr/destek-mekanizmalari-ve-bilgi-kaynaklari/gtip-arama-motoru"
+            rel="noreferrer"
+            target="_blank"
+          >
+            Open official GTIP search
+          </a>
+          <a
+            className="font-medium underline"
+            href="https://ticaret.gov.tr/gumruk-islemleri/sikca-sorulan-sorular/ticari/tarife"
+            rel="noreferrer"
+            target="_blank"
+          >
+            Read tariff guidance
+          </a>
+        </div>
       </div>
       <section className="card p-5">
         <h2 className="font-semibold">New customs quote</h2>
@@ -35,15 +55,15 @@ export default async function CustomsPage() {
           {[
             ["originCountry", "Origin", "TR"],
             ["destinationCountry", "Destination", "US"],
-            ["hsCode", "HS / HTS", "4202224500"],
-            ["productDescription", "Product", "Handmade bag"],
+            ["hsCode", "Confirmed HS / HTS code", ""],
+            ["productDescription", "Exact product description", ""],
             ["countryOfOrigin", "Country of origin", "TR"],
-            ["material", "Outer material", "Cotton"],
-            ["declaredValue", "Declared value", "150"],
+            ["material", "Materials and composition", ""],
+            ["declaredValue", "Declared customs value", ""],
             ["currency", "Currency", "USD"],
-            ["dutyRate", "Duty %", "6.3"],
-            ["tariffRate", "Additional tariff %", "10"],
-            ["processing", "Carrier processing", "4.5"],
+            ["dutyRate", "Confirmed duty %", "0"],
+            ["tariffRate", "Confirmed additional tariff %", "0"],
+            ["processing", "Quoted carrier processing", "0"],
             ["brokerage", "Brokerage", "0"],
             ["clearance", "Clearance", "0"],
             ["destinationTax", "Destination tax", "0"],
@@ -88,8 +108,8 @@ export default async function CustomsPage() {
             <input className="field mt-1" name="expirationDate" type="date" />
           </label>
           <label className="text-xs text-stone-500">
-            Source
-            <input className="field mt-1" name="source" />
+            Dated source URL or quote reference
+            <input className="field mt-1" name="source" required />
           </label>
           <label className="text-xs text-stone-500">
             Notes

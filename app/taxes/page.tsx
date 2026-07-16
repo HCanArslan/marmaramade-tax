@@ -8,6 +8,9 @@ import { requireAdmin } from "@/lib/auth/require-admin";
 import { prisma } from "@/lib/prisma";
 export default async function TaxesPage() {
   await requireAdmin({ redirectTo: "/taxes" });
+  const now = new Date();
+  const currentYear = String(now.getFullYear());
+  const currentMonth = String(now.getMonth() + 1);
   const [rules, obligations, vat, estimates] = await Promise.all([
     prisma.taxRuleVersion.findMany({ orderBy: { effectiveFrom: "desc" } }),
     prisma.taxObligation.findMany({ orderBy: { dueDate: "asc" } }),
@@ -25,9 +28,22 @@ export default async function TaxesPage() {
         <h1 className="mt-2 text-3xl font-semibold">Taxes</h1>
       </header>
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-        Rules and deadlines are editable, effective-dated assumptions. Official
-        liability requires current accountant or authority confirmation.
+        This is a bookkeeping workspace, not an automatic tax return. Ask your
+        accountant for the applicable tax types, effective dates, filing
+        periods, and deadlines. Save those answers with their source; blanks are
+        intentionally not replaced with guessed liabilities.
       </div>
+      <section className="grid gap-3 md:grid-cols-3">
+        <Guide title="1. Rules">
+          Record only accountant-confirmed rules and effective dates.
+        </Guide>
+        <Guide title="2. Monthly VAT">
+          Enter ledger totals; keep estimated and filed amounts separate.
+        </Guide>
+        <Guide title="3. Obligations">
+          Create a due item only after its deadline is confirmed.
+        </Guide>
+      </section>
       <section className="grid gap-5 lg:grid-cols-2">
         <Box title="Tax rule version">
           <form
@@ -61,25 +77,44 @@ export default async function TaxesPage() {
       </section>
       <section className="grid gap-5 lg:grid-cols-2">
         <Box title="VAT period estimate">
-          <form action={upsertVatPeriodAction} className="grid gap-3 sm:grid-cols-2">
-            <I n="year" p="Year" t="number" />
-            <I n="month" p="Month 1–12" t="number" />
+          <form
+            action={upsertVatPeriodAction}
+            className="grid gap-3 sm:grid-cols-2"
+          >
+            <I n="year" p="Calendar year" v={currentYear} t="number" />
+            <I n="month" p="Month (1–12)" v={currentMonth} t="number" />
             <I n="outputVat" p="Output VAT TRY" v="0" t="number" />
             <I n="inputVat" p="Input VAT TRY" v="0" t="number" />
-            <I n="estimatedPayable" p="Estimated payable TRY" v="0" t="number" />
-            <I n="filedPayable" p="Filed amount (optional)" r={false} t="number" />
+            <I
+              n="estimatedPayable"
+              p="Estimated payable TRY"
+              v="0"
+              t="number"
+            />
+            <I
+              n="filedPayable"
+              p="Filed amount (optional)"
+              r={false}
+              t="number"
+            />
             <B />
           </form>
         </Box>
         <Box title="Income-tax estimate">
-          <form action={upsertIncomeTaxEstimateAction} className="grid gap-3 sm:grid-cols-2">
-            <I n="year" p="Year" t="number" />
+          <form
+            action={upsertIncomeTaxEstimateAction}
+            className="grid gap-3 sm:grid-cols-2"
+          >
+            <I n="year" p="Calendar year" v={currentYear} t="number" />
             <I n="period" p="Period, e.g. 2026-Q3" />
             <I n="taxableBusinessBase" p="Taxable business base" t="number" />
             <I n="estimatedTax" p="Estimated tax" t="number" />
             <I n="currency" p="Currency" v="TRY" />
             <I n="assumptions" p="Accountant-confirmed assumptions" />
-            <label className="flex items-center gap-2 text-sm"><input name="salaryIncomeIncluded" type="checkbox" /> Salary income included</label>
+            <label className="flex items-center gap-2 text-sm">
+              <input name="salaryIncomeIncluded" type="checkbox" /> Salary
+              income included
+            </label>
             <B />
           </form>
         </Box>
@@ -138,6 +173,18 @@ const Rows = ({ title, rows }: { title: string; rows: string[] }) => (
     ))}
   </Box>
 );
+const Guide = ({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) => (
+  <div className="card p-5">
+    <h2 className="font-semibold">{title}</h2>
+    <p className="mt-1 text-sm text-stone-500">{children}</p>
+  </div>
+);
 const I = ({
   n,
   p,
@@ -151,14 +198,19 @@ const I = ({
   r?: boolean;
   t?: string;
 }) => (
-  <input
-    className="field"
-    name={n}
-    placeholder={p}
-    defaultValue={v}
-    required={r}
-    type={t}
-  />
+  <label className="text-xs text-stone-500">
+    {p}
+    <input
+      aria-label={p}
+      className="field mt-1"
+      name={n}
+      placeholder={p}
+      defaultValue={v}
+      required={r}
+      type={t}
+      step={t === "number" ? "0.01" : undefined}
+    />
+  </label>
 );
 const B = () => (
   <button className="rounded-xl bg-jade px-4 py-2 text-sm text-white">
