@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/cron/shipentegra-tracking", "schedule": "0 */6 * * *" }
+  ]
+}

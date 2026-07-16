@@ -42,6 +42,8 @@ If Etsy integration is enabled, add:
 
 Use a stable production domain for Etsy. Do not register changing preview URLs as the primary callback.
 
+If ShipEntegra is enabled, add `SHIPENTEGRA_CLIENT_ID`, `SHIPENTEGRA_CLIENT_SECRET`, `SHIPENTEGRA_ENVIRONMENT=production`, `SHIPENTEGRA_OPERATION_MODE=ADMIN_CONFIRMED_SHIPMENT`, `SHIPENTEGRA_REQUEST_TIMEOUT_MS`, `SHIPENTEGRA_TRACKING_SYNC_ENABLED`, `SHIPENTEGRA_TRACKING_SYNC_HOURS`, and `CRON_SECRET`. Production requests remain server-only, and shipment creation remains fail-closed until ShipEntegra confirms the documented-response gaps listed in `SHIPENTEGRA_INTEGRATION.md`. The committed `vercel.json` schedules tracking every six hours; the route requires the cron bearer secret.
+
 ## 3. Apply the database migration
 
 Before sending production traffic to a new database, use the provider credentials in a trusted terminal or protected CI release job and run:
@@ -81,3 +83,5 @@ Preview deployments should use a separate preview database or branch when they e
 ## Compliance migration and rollback note
 
 Apply `20260716110000_complete_ledger_compliance_goals` with `npm run db:deploy`. It is additive: existing required columns are unchanged and the new legal-profile link on orders is nullable for safe backfill. A rollback should first export the new compliance/document/goal metadata, stop application writes, remove the added foreign keys and tables in reverse dependency order, then remove the added columns and enums. Blob objects are not deleted by a database rollback; retain or remove them through the authenticated archive workflow.
+
+Apply `20260716170000_sole_proprietorship_shipentegra_operations` only after a database backup. It is additive, adds the confirmed Hamit/Selda operational roles, and does not rewrite orders, Etsy data, OAuth tokens, snapshots, or documents.

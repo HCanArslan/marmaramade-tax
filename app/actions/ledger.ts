@@ -49,6 +49,7 @@ export async function createLegalProfileAction(formData: FormData) {
         "SOLE_PROPRIETORSHIP",
         "LIMITED_COMPANY",
         "PLANNING_ONLY",
+        "ARCHIVED",
       ]),
       legalSellerName: text,
       legalSellerType: z.enum([
@@ -424,6 +425,8 @@ export async function createProfitGoalAction(formData: FormData) {
         "PRODUCT_COMBINATION",
         "CURRENT_INVENTORY",
         "CUSTOM_MIX",
+        "SALES_PACE",
+        "CASH_FLOW_TARGET",
       ]),
       operatingProfileId: text,
       exchangeRate: number,

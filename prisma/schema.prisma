@@ -66,17 +66,19 @@ model ProductCostVersion {
 }
 
 model PackageProfile {
-  id                String   @id @default(cuid())
-  name              String   @unique
+  id                String                        @id @default(cuid())
+  name              String                        @unique
   lengthCm          Decimal
   widthCm           Decimal
   heightCm          Decimal
   actualWeightKg    Decimal
-  volumetricDivisor Decimal  @default(5000)
-  packagingCostTry  Decimal  @default(0)
+  volumetricDivisor Decimal                       @default(5000)
+  packagingCostTry  Decimal                       @default(0)
   notes             String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+  shipEntegraQuotes ShipEntegraQuote[]
+  shipmentSnapshots ShipEntegraShipmentSnapshot[]
 }
 
 model Marketplace {
@@ -253,42 +255,46 @@ model ExchangeRateSnapshot {
 }
 
 model Order {
-  id                         String                  @id @default(cuid())
-  orderNumber                String                  @unique
+  id                         String                    @id @default(cuid())
+  orderNumber                String                    @unique
   orderDate                  DateTime
   marketplace                String
   destinationCountry         String
   destinationRegion          String?
   currency                   String
   orderStatus                String
-  offsiteAdAttributed        Boolean                 @default(false)
-  trailingEtsyRevenueUsd     Decimal                 @default(0)
-  currencyConversionRequired Boolean                 @default(true)
-  depositFeeApplies          Boolean                 @default(false)
+  offsiteAdAttributed        Boolean                   @default(false)
+  trailingEtsyRevenueUsd     Decimal                   @default(0)
+  currencyConversionRequired Boolean                   @default(true)
+  depositFeeApplies          Boolean                   @default(false)
   businessProfileVersionId   String
   feeProfileId               String
   exchangeRateSnapshotId     String
   shippingQuoteId            String?
   customsQuoteId             String?
   notes                      String?
-  createdAt                  DateTime                @default(now())
-  updatedAt                  DateTime                @updatedAt
-  businessProfileVersion     BusinessProfileVersion  @relation(fields: [businessProfileVersionId], references: [id])
-  feeProfile                 FeeProfile              @relation(fields: [feeProfileId], references: [id])
-  exchangeRateSnapshot       ExchangeRateSnapshot    @relation(fields: [exchangeRateSnapshotId], references: [id])
-  shippingQuote              ShippingQuote?          @relation(fields: [shippingQuoteId], references: [id])
-  customsQuote               CustomsQuote?           @relation(fields: [customsQuoteId], references: [id])
+  createdAt                  DateTime                  @default(now())
+  updatedAt                  DateTime                  @updatedAt
+  businessProfileVersion     BusinessProfileVersion    @relation(fields: [businessProfileVersionId], references: [id])
+  feeProfile                 FeeProfile                @relation(fields: [feeProfileId], references: [id])
+  exchangeRateSnapshot       ExchangeRateSnapshot      @relation(fields: [exchangeRateSnapshotId], references: [id])
+  shippingQuote              ShippingQuote?            @relation(fields: [shippingQuoteId], references: [id])
+  customsQuote               CustomsQuote?             @relation(fields: [customsQuoteId], references: [id])
   items                      OrderItem[]
   snapshots                  OrderCostSnapshot[]
   legalOperatingProfileId    String?
   confirmedAt                DateTime?
-  complianceComplete         Boolean                 @default(false)
-  etsyReceiptId              String?                 @unique
-  legalOperatingProfile      LegalOperatingProfile?  @relation(fields: [legalOperatingProfileId], references: [id])
+  complianceComplete         Boolean                   @default(false)
+  etsyReceiptId              String?                   @unique
+  legalOperatingProfile      LegalOperatingProfile?    @relation(fields: [legalOperatingProfileId], references: [id])
   documents                  StoredDocument[]
   checklist                  OrderDocumentChecklist?
   adjustments                OrderAdjustment[]
   withholdingRecords         WithholdingRecord[]
+  shipEntegraQuotes          ShipEntegraQuote[]
+  shipEntegraShipment        ShipEntegraShipment?
+  shipmentConfirmations      ShipEntegraConfirmation[]
+  shippingAdjustments        ShippingCostAdjustment[]
 
   @@index([orderDate])
   @@index([destinationCountry])
@@ -773,6 +779,7 @@ enum OperatingMode {
   SOLE_PROPRIETORSHIP
   LIMITED_COMPANY
   PLANNING_ONLY
+  ARCHIVED
 }
 
 enum LegalSellerType {
@@ -882,10 +889,12 @@ enum PlanningMode {
   PRODUCT_COMBINATION
   CURRENT_INVENTORY
   CUSTOM_MIX
+  SALES_PACE
+  CASH_FLOW_TARGET
 }
 
 model LegalOperatingProfile {
-  id                                   String                  @id @default(cuid())
+  id                                   String                    @id @default(cuid())
   name                                 String
   effectiveFrom                        DateTime
   effectiveTo                          DateTime?
@@ -899,28 +908,29 @@ model LegalOperatingProfile {
   exporterName                         String
   shipEntegraAccountHolderName         String
   businessStatus                       String
-  artisanTaxExemptionEnabled           Boolean                 @default(false)
+  artisanTaxExemptionEnabled           Boolean                   @default(false)
   artisanTaxExemptionCertificateNumber String?
   artisanTaxExemptionCertificateDate   DateTime?
   artisanTaxExemptionExpiryDate        DateTime?
-  orphanPensionRiskStatus              OrphanPensionRiskStatus @default(UNKNOWN)
-  sgkWrittenConfirmationStatus         String                  @default("UNKNOWN")
+  orphanPensionRiskStatus              OrphanPensionRiskStatus   @default(UNKNOWN)
+  sgkWrittenConfirmationStatus         String                    @default("UNKNOWN")
   sgkWrittenConfirmationDate           DateTime?
-  vatIdSubmittedToEtsy                 Boolean                 @default(false)
+  vatIdSubmittedToEtsy                 Boolean                   @default(false)
   sellerFeeVatTreatment                String
-  incomeTaxReserveRate                 Decimal                 @default(0)
-  withholdingTaxRate                   Decimal                 @default(0)
-  expectedMonthlyOrders                Int                     @default(1)
-  fourAEmploymentActive                Boolean                 @default(false)
+  incomeTaxReserveRate                 Decimal                   @default(0)
+  withholdingTaxRate                   Decimal                   @default(0)
+  expectedMonthlyOrders                Int                       @default(1)
+  fourAEmploymentActive                Boolean                   @default(false)
   companyStartDate                     DateTime?
   notes                                String?
-  createdAt                            DateTime                @default(now())
-  updatedAt                            DateTime                @updatedAt
+  createdAt                            DateTime                  @default(now())
+  updatedAt                            DateTime                  @updatedAt
   orders                               Order[]
   documents                            StoredDocument[]
   complianceCases                      ComplianceCase[]
   goals                                ProfitGoal[]
   withholdingRecords                   WithholdingRecord[]
+  shipmentConfirmations                ShipEntegraConfirmation[]
 
   @@unique([name, effectiveFrom])
   @@index([effectiveFrom, effectiveTo])
@@ -1001,6 +1011,7 @@ model StoredDocument {
   legalOperatingProfile   LegalOperatingProfile?       @relation(fields: [legalOperatingProfileId], references: [id])
   complianceCase          ComplianceCase?              @relation(fields: [complianceCaseId], references: [id])
   checklistItems          OrderDocumentChecklistItem[]
+  shipEntegraLabelFor     ShipEntegraShipment[]
 
   @@index([checksumSha256, deletedAt])
   @@index([orderId, category, status])
@@ -1215,4 +1226,909 @@ model MonthlyActualSummary {
   createdAt                DateTime @default(now())
 
   @@unique([month, currency])
+}
+
+enum BusinessType {
+  SOLE_PROPRIETORSHIP
+  LIMITED_COMPANY
+  JOINT_STOCK_COMPANY
+  TAX_EXEMPT_ARTISAN
+  INDIVIDUAL_PLANNING
+}
+
+enum BusinessStatus {
+  PLANNING
+  FORMATION_IN_PROGRESS
+  ACTIVE
+  SUSPENDED
+  CLOSING
+  CLOSED
+}
+
+enum PersonRole {
+  LEGAL_OWNER
+  BUSINESS_OPERATOR
+  ETSY_ACCOUNT_HOLDER
+  EXPORTER
+  INVOICE_ISSUER
+  BANK_ACCOUNT_HOLDER
+  MAKER
+  DESIGNER
+  PHOTOGRAPHER
+  SHOP_MANAGER
+  PACKAGING_OPERATOR
+  CUSTOMER_SERVICE
+  EMPLOYEE
+  SUPPLIER
+  FAMILY_CONTRIBUTOR
+  ACCOUNTANT
+  OTHER
+}
+
+enum ConfirmationStatus {
+  UNKNOWN
+  PENDING_ACCOUNTANT_CONFIRMATION
+  PENDING_SGK_CONFIRMATION
+  CONFIRMED_BY_ACCOUNTANT
+  CONFIRMED_BY_SGK
+  CONFIRMED_BY_TAX_OFFICE
+  MANUAL_OVERRIDE
+}
+
+enum ShipEntegraEnvironment {
+  SANDBOX
+  PRODUCTION
+}
+
+enum ShipEntegraOperationMode {
+  PLANNING_ONLY
+  ADMIN_CONFIRMED_SHIPMENT
+}
+
+enum ShipEntegraConnectionStatus {
+  NOT_CONFIGURED
+  CONNECTED
+  AUTH_FAILED
+  DEGRADED
+  DISCONNECTED
+}
+
+enum ShipEntegraEndpointCategory {
+  READ_ONLY
+  QUOTE
+  SHIPMENT_MUTATION
+  TRACKING
+  DOCUMENT
+  UNSUPPORTED
+}
+
+enum ShipEntegraOperationStatus {
+  PENDING
+  IN_PROGRESS
+  SUCCEEDED
+  FAILED
+  NEEDS_RECONCILIATION
+}
+
+enum CostSource {
+  LOCAL_CUSTOMS_QUOTE
+  SHIPENTEGRA_ESTIMATE
+  SHIPENTEGRA_ACTUAL
+  MANUAL
+  UNKNOWN
+}
+
+model BusinessProfile {
+  id                           String             @id @default(cuid())
+  displayName                  String
+  legalName                    String
+  brandName                    String
+  businessType                 BusinessType
+  operatingMode                OperatingMode      @default(SOLE_PROPRIETORSHIP)
+  status                       BusinessStatus     @default(FORMATION_IN_PROGRESS)
+  ownerFullName                String
+  ownerNationalIdMasked        String?
+  taxNumberMasked              String?
+  taxOffice                    String?
+  naceCodes                    String[]           @default([])
+  establishmentDate            DateTime?
+  closureDate                  DateTime?
+  tradeAddress                 String?
+  correspondenceAddress        String?
+  homeOffice                   Boolean            @default(false)
+  virtualOfficeProvider        String?
+  virtualOfficeContractStart   DateTime?
+  virtualOfficeContractEnd     DateTime?
+  phone                        String?
+  email                        String?
+  website                      String?
+  accountantName               String?
+  accountantCompany            String?
+  accountantEmail              String?
+  accountantPhone              String?
+  accountingContractStart      DateTime?
+  accountingContractEnd        DateTime?
+  accountantConfirmationStatus ConfirmationStatus @default(PENDING_ACCOUNTANT_CONFIRMATION)
+  customsRegistrationStatus    ConfirmationStatus @default(UNKNOWN)
+  customsRegistrationDate      DateTime?
+  etgbEnabled                  Boolean            @default(false)
+  microExportEnabled           Boolean            @default(false)
+  eArchiveEnabled              Boolean?
+  eInvoiceEnabled              Boolean?
+  eDispatchEnabled             Boolean?
+  eSignatureEnabled            Boolean?
+  financialSealEnabled         Boolean?
+  etsyLegalSellerName          String
+  etsyTaxpayerName             String
+  etsyPaymentsHolderName       String
+  shipEntegraAccountHolderName String
+  exporterName                 String
+  invoiceIssuerName            String
+  bankAccountHolderName        String
+  effectiveFrom                DateTime
+  effectiveTo                  DateTime?
+  active                       Boolean            @default(true)
+  notes                        String?
+  createdAt                    DateTime           @default(now())
+  updatedAt                    DateTime           @updatedAt
+
+  @@index([active, effectiveFrom, effectiveTo])
+  @@index([operatingMode, effectiveFrom])
+}
+
+model BusinessPerson {
+  id                  String               @id @default(cuid())
+  fullName            String
+  displayName         String?
+  relationshipToOwner String?
+  notes               String?
+  active              Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  roles               BusinessPersonRole[]
+
+  @@index([active, fullName])
+}
+
+model BusinessPersonRole {
+  id                           String             @id @default(cuid())
+  personId                     String
+  role                         PersonRole
+  effectiveFrom                DateTime
+  effectiveTo                  DateTime?
+  compensationModel            String?
+  sgkStatus                    ConfirmationStatus @default(UNKNOWN)
+  taxTreatmentStatus           ConfirmationStatus @default(UNKNOWN)
+  accountantConfirmationStatus ConfirmationStatus @default(PENDING_ACCOUNTANT_CONFIRMATION)
+  notes                        String?
+  createdAt                    DateTime           @default(now())
+  updatedAt                    DateTime           @updatedAt
+  person                       BusinessPerson     @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@unique([personId, role, effectiveFrom])
+  @@index([role, effectiveFrom, effectiveTo])
+}
+
+model FormationTask {
+  id                 String             @id @default(cuid())
+  category           String
+  title              String
+  description        String?
+  responsibleParty   String?
+  status             String             @default("NOT_STARTED")
+  dueDate            DateTime?
+  completedAt        DateTime?
+  confirmationSource ConfirmationStatus @default(UNKNOWN)
+  notes              String?
+  relatedDocumentId  String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([status, dueDate])
+  @@index([category])
+}
+
+model BankAccount {
+  id                  String            @id @default(cuid())
+  businessProfileId   String
+  bankName            String
+  accountName         String
+  ibanMasked          String?
+  accountNumberMasked String?
+  currency            String
+  accountType         String
+  businessDedicated   Boolean           @default(true)
+  active              Boolean           @default(true)
+  openedAt            DateTime?
+  closedAt            DateTime?
+  notes               String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  transactions        BankTransaction[]
+
+  @@index([businessProfileId, active])
+  @@index([currency])
+}
+
+model PaymentCard {
+  id                  String   @id @default(cuid())
+  businessProfileId   String
+  issuer              String
+  cardholderName      String
+  lastFourDigits      String
+  currency            String
+  cardType            String
+  businessDedicated   Boolean  @default(true)
+  active              Boolean  @default(true)
+  statementClosingDay Int?
+  paymentDueDay       Int?
+  notes               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([businessProfileId, active])
+}
+
+model BankTransaction {
+  id                    String                 @id @default(cuid())
+  accountId             String
+  externalReference     String?
+  transactionDate       DateTime
+  valueDate             DateTime?
+  amount                Decimal
+  currency              String
+  direction             String
+  description           String
+  normalizedDescription String?
+  counterparty          String?
+  category              String?
+  reconciliationStatus  String                 @default("UNMATCHED")
+  relatedOrderId        String?
+  relatedExpenseId      String?
+  relatedTaxPaymentId   String?
+  relatedEtsyPayoutId   String?
+  documentId            String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  account               BankAccount            @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  matches               BankTransactionMatch[]
+
+  @@unique([accountId, externalReference])
+  @@index([transactionDate, reconciliationStatus])
+}
+
+model BankTransactionMatch {
+  id                String          @id @default(cuid())
+  bankTransactionId String
+  targetType        String
+  targetId          String
+  amount            Decimal
+  currency          String
+  confidence        Decimal?
+  confirmed         Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+  transaction       BankTransaction @relation(fields: [bankTransactionId], references: [id], onDelete: Cascade)
+
+  @@unique([bankTransactionId, targetType, targetId])
+  @@index([targetType, targetId])
+}
+
+model OwnerTransaction {
+  id                String   @id @default(cuid())
+  businessProfileId String
+  transactionDate   DateTime
+  type              String
+  amount            Decimal
+  currency          String
+  bankTransactionId String?
+  description       String?
+  documentId        String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([businessProfileId, transactionDate])
+}
+
+model Expense {
+  id                      String              @id @default(cuid())
+  businessProfileId       String
+  expenseDate             DateTime
+  supplierName            String?
+  supplierTaxNumberMasked String?
+  description             String
+  category                String
+  subcategory             String?
+  netAmount               Decimal
+  vatAmount               Decimal
+  grossAmount             Decimal
+  currency                String
+  exchangeRate            Decimal?
+  grossAmountTry          Decimal
+  paymentStatus           String              @default("UNPAID")
+  paymentMethodId         String?
+  bankTransactionId       String?
+  documentType            String?
+  documentNumber          String?
+  documentDate            DateTime?
+  documentId              String?
+  deductibilityStatus     String              @default("UNKNOWN")
+  deductiblePercentage    Decimal?
+  vatDeductibilityStatus  String              @default("UNKNOWN")
+  vatDeductiblePercentage Decimal?
+  allocationMethod        String?
+  allocatedProductId      String?
+  allocatedOrderId        String?
+  allocatedPeriod         DateTime?
+  recurring               Boolean             @default(false)
+  recurrenceRule          String?
+  accountantReviewStatus  ConfirmationStatus  @default(PENDING_ACCOUNTANT_CONFIRMATION)
+  notes                   String?
+  deletedAt               DateTime?
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  allocations             ExpenseAllocation[]
+
+  @@index([expenseDate, category])
+  @@index([paymentStatus, deletedAt])
+}
+
+model RecurringExpense {
+  id                  String    @id @default(cuid())
+  businessProfileId   String
+  name                String
+  category            String
+  expectedAmount      Decimal
+  currency            String
+  recurrenceRule      String
+  nextDueAt           DateTime?
+  active              Boolean   @default(true)
+  deductibilityStatus String    @default("UNKNOWN")
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([active, nextDueAt])
+}
+
+model ExpenseAllocation {
+  id         String   @id @default(cuid())
+  expenseId  String
+  targetType String
+  targetId   String
+  percentage Decimal
+  amountTry  Decimal
+  createdAt  DateTime @default(now())
+  expense    Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@unique([expenseId, targetType, targetId])
+}
+
+model FixedAsset {
+  id                          String             @id @default(cuid())
+  businessProfileId           String
+  name                        String
+  category                    String
+  acquisitionDate             DateTime
+  acquisitionCost             Decimal
+  currency                    String
+  acquisitionCostTry          Decimal
+  usefulLifeMonths            Int?
+  depreciationMethod          String?
+  depreciationStartDate       DateTime?
+  accumulatedDepreciation     Decimal            @default(0)
+  carryingValue               Decimal
+  disposalDate                DateTime?
+  documentId                  String?
+  accountantReviewStatus      ConfirmationStatus @default(PENDING_ACCOUNTANT_CONFIRMATION)
+  planningDepreciationEnabled Boolean            @default(false)
+  notes                       String?
+  createdAt                   DateTime           @default(now())
+  updatedAt                   DateTime           @updatedAt
+
+  @@index([businessProfileId, acquisitionDate])
+}
+
+model Material {
+  id                    String                         @id @default(cuid())
+  sku                   String                         @unique
+  name                  String
+  unit                  String
+  active                Boolean                        @default(true)
+  reorderPoint          Decimal?
+  notes                 String?
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
+  lots                  MaterialPurchaseLot[]
+  inventoryTransactions MaterialInventoryTransaction[]
+}
+
+model MaterialPurchaseLot {
+  id           String   @id @default(cuid())
+  materialId   String
+  purchasedAt  DateTime
+  quantity     Decimal
+  remaining    Decimal
+  unitCostTry  Decimal
+  documentId   String?
+  supplierName String?
+  createdAt    DateTime @default(now())
+  material     Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  @@index([materialId, purchasedAt])
+}
+
+model MaterialInventoryTransaction {
+  id            String   @id @default(cuid())
+  materialId    String
+  transactionAt DateTime
+  type          String
+  quantity      Decimal
+  referenceType String?
+  referenceId   String?
+  notes         String?
+  createdAt     DateTime @default(now())
+  material      Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  @@index([materialId, transactionAt])
+}
+
+model ProductionBatch {
+  id                    String           @id @default(cuid())
+  batchCode             String           @unique
+  productTemplateId     String
+  makerPersonId         String
+  startDate             DateTime
+  completionDate        DateTime?
+  status                String
+  plannedQuantity       Int
+  completedQuantity     Int              @default(0)
+  rejectedQuantity      Int              @default(0)
+  totalLaborHours       Decimal          @default(0)
+  materialCostVersionId String?
+  notes                 String?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  units                 ProductionUnit[]
+
+  @@index([status, startDate])
+}
+
+model ProductionUnit {
+  id                    String                         @id @default(cuid())
+  batchId               String
+  localSku              String                         @unique
+  serialNumber          String?
+  oneOfOne              Boolean                        @default(true)
+  completedAt           DateTime?
+  qualityStatus         String                         @default("PENDING")
+  productCostSnapshot   Json
+  inventoryStatus       String                         @default("AVAILABLE")
+  etsyListingId         String?
+  notes                 String?
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
+  batch                 ProductionBatch                @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  inventoryTransactions FinishedInventoryTransaction[]
+
+  @@index([inventoryStatus, completedAt])
+}
+
+model FinishedInventoryTransaction {
+  id               String         @id @default(cuid())
+  productionUnitId String
+  transactionAt    DateTime
+  type             String
+  orderId          String?
+  notes            String?
+  createdAt        DateTime       @default(now())
+  unit             ProductionUnit @relation(fields: [productionUnitId], references: [id], onDelete: Restrict)
+
+  @@index([productionUnitId, transactionAt])
+}
+
+model EtsyPayout {
+  id              String                     @id @default(cuid())
+  etsyPayoutId    String                     @unique
+  payoutDate      DateTime
+  amount          Decimal
+  currency        String
+  status          String
+  bankReference   String?
+  sourceHash      String
+  firstImportedAt DateTime                   @default(now())
+  lastImportedAt  DateTime                   @default(now())
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+  reconciliations EtsyPayoutReconciliation[]
+
+  @@index([payoutDate, status])
+}
+
+model EtsyPayoutReconciliation {
+  id              String     @id @default(cuid())
+  payoutId        String
+  targetType      String
+  targetId        String
+  amount          Decimal
+  currency        String
+  fxDifferenceTry Decimal?
+  confirmed       Boolean    @default(false)
+  createdAt       DateTime   @default(now())
+  payout          EtsyPayout @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+
+  @@unique([payoutId, targetType, targetId])
+}
+
+model SalesDocument {
+  id                String    @id @default(cuid())
+  orderId           String?
+  documentType      String
+  documentNumber    String?
+  status            String    @default("DRAFT")
+  issueDate         DateTime?
+  currency          String
+  netAmount         Decimal
+  vatAmount         Decimal
+  grossAmount       Decimal
+  validationJson    Json
+  externalProvider  String?
+  externalReference String?
+  storedDocumentId  String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([documentType, documentNumber])
+  @@index([orderId, status])
+}
+
+model ShipEntegraConnection {
+  id                      String                      @id @default(cuid())
+  status                  ShipEntegraConnectionStatus @default(NOT_CONFIGURED)
+  accountReference        String?
+  environment             ShipEntegraEnvironment
+  operationMode           ShipEntegraOperationMode    @default(PLANNING_ONLY)
+  connectedAt             DateTime?
+  lastSuccessfulRequestAt DateTime?
+  lastFailedRequestAt     DateTime?
+  lastQuoteSyncAt         DateTime?
+  lastShipmentSyncAt      DateTime?
+  lastErrorCode           String?
+  createdAt               DateTime                    @default(now())
+  updatedAt               DateTime                    @updatedAt
+
+  @@unique([environment])
+}
+
+model ShipEntegraQuote {
+  id                           String          @id @default(cuid())
+  localOrderId                 String?
+  packageProfileId             String?
+  originCountry                String
+  destinationCountry           String
+  destinationPostalCodePartial String?
+  weightBand                   String
+  carrier                      String
+  serviceCode                  String
+  serviceName                  String
+  incoterm                     String          @default("UNKNOWN")
+  estimatedPrice               Decimal
+  currency                     String
+  fuelCost                     Decimal         @default(0)
+  additionalFee                Decimal         @default(0)
+  additionalFeeDescription     String?
+  estimatedDeliveryMinDays     Int?
+  estimatedDeliveryMaxDays     Int?
+  quotePayloadHash             String
+  requestAssumptionsJson       Json
+  quotedAt                     DateTime
+  expiresAt                    DateTime?
+  selected                     Boolean         @default(false)
+  source                       CostSource      @default(SHIPENTEGRA_ESTIMATE)
+  createdAt                    DateTime        @default(now())
+  updatedAt                    DateTime        @updatedAt
+  localOrder                   Order?          @relation(fields: [localOrderId], references: [id], onDelete: Restrict)
+  packageProfile               PackageProfile? @relation(fields: [packageProfileId], references: [id], onDelete: Restrict)
+
+  @@unique([quotePayloadHash, serviceCode])
+  @@index([destinationCountry, packageProfileId, weightBand, quotedAt])
+  @@index([localOrderId, selected])
+}
+
+model ShipEntegraConfirmation {
+  id                      String                @id @default(cuid())
+  localOrderId            String
+  legalOperatingProfileId String
+  selectedQuoteId         String?
+  tokenHash               String                @unique
+  previewPayloadHash      String
+  confirmedBy             String
+  confirmedAt             DateTime
+  expiresAt               DateTime
+  consumedAt              DateTime?
+  createdAt               DateTime              @default(now())
+  localOrder              Order                 @relation(fields: [localOrderId], references: [id], onDelete: Restrict)
+  legalOperatingProfile   LegalOperatingProfile @relation(fields: [legalOperatingProfileId], references: [id], onDelete: Restrict)
+
+  @@index([localOrderId, expiresAt, consumedAt])
+}
+
+model ShipEntegraShipmentOperation {
+  id                 String                     @id @default(cuid())
+  localOrderId       String
+  idempotencyKey     String                     @unique
+  externalReference  String                     @unique
+  confirmationId     String
+  status             ShipEntegraOperationStatus @default(PENDING)
+  requestPayloadHash String
+  externalShipmentId String?
+  attemptCount       Int                        @default(0)
+  lastErrorCode      String?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  @@index([localOrderId, status])
+}
+
+model ShipEntegraShipment {
+  id                     String                        @id @default(cuid())
+  localOrderId           String                        @unique
+  externalShipmentId     String                        @unique
+  externalOrderReference String                        @unique
+  carrier                String?
+  serviceCode            String?
+  serviceName            String?
+  incoterm               String                        @default("UNKNOWN")
+  shipmentStatus         String
+  trackingNumber         String?
+  trackingUrl            String?
+  estimatedCost          Decimal?
+  creationCost           Decimal?
+  actualCost             Decimal?
+  currency               String?
+  labelDocumentId        String?
+  createdRemotelyAt      DateTime?
+  lastSyncedAt           DateTime?
+  deliveredAt            DateTime?
+  canceledAt             DateTime?
+  createdAt              DateTime                      @default(now())
+  updatedAt              DateTime                      @updatedAt
+  localOrder             Order                         @relation(fields: [localOrderId], references: [id], onDelete: Restrict)
+  labelDocument          StoredDocument?               @relation(fields: [labelDocumentId], references: [id], onDelete: Restrict)
+  trackingEvents         ShipEntegraTrackingEvent[]
+  snapshots              ShipEntegraShipmentSnapshot[]
+
+  @@index([shipmentStatus, lastSyncedAt])
+  @@index([trackingNumber])
+}
+
+model ShipEntegraTrackingEvent {
+  id              String              @id @default(cuid())
+  shipmentId      String
+  externalEventId String
+  statusCode      String?
+  statusLabel     String?
+  description     String
+  eventLocation   String?
+  eventTime       DateTime
+  firstImportedAt DateTime            @default(now())
+  createdAt       DateTime            @default(now())
+  shipment        ShipEntegraShipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@unique([shipmentId, externalEventId])
+  @@index([shipmentId, eventTime])
+}
+
+model ShipEntegraShipmentSnapshot {
+  id               String              @id @default(cuid())
+  shipmentId       String
+  packageProfileId String?
+  snapshotType     String
+  payloadHash      String
+  carrier          String?
+  service          String?
+  incoterm         String
+  packageLengthCm  Decimal
+  packageWidthCm   Decimal
+  packageHeightCm  Decimal
+  actualWeightKg   Decimal
+  declaredValue    Decimal
+  currency         String
+  estimatedCost    Decimal?
+  createdAt        DateTime            @default(now())
+  shipment         ShipEntegraShipment @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  packageProfile   PackageProfile?     @relation(fields: [packageProfileId], references: [id], onDelete: Restrict)
+
+  @@unique([shipmentId, snapshotType, payloadHash])
+}
+
+model ShipEntegraApiCall {
+  id               String                      @id @default(cuid())
+  operation        String
+  endpointCategory ShipEntegraEndpointCategory
+  success          Boolean
+  statusCode       Int?
+  durationMs       Int
+  requestReference String?
+  errorCode        String?
+  createdAt        DateTime                    @default(now())
+
+  @@index([operation, createdAt])
+  @@index([success, createdAt])
+}
+
+model ShippingCostAdjustment {
+  id                 String     @id @default(cuid())
+  localOrderId       String
+  shipmentId         String?
+  source             CostSource
+  estimatedAmount    Decimal?
+  actualAmount       Decimal
+  currency           String
+  varianceAmount     Decimal?
+  variancePercentage Decimal?
+  reason             String?
+  createdAt          DateTime   @default(now())
+  localOrder         Order      @relation(fields: [localOrderId], references: [id], onDelete: Restrict)
+
+  @@index([localOrderId, createdAt])
+}
+
+model CustomsProfile {
+  id                 String             @id @default(cuid())
+  name               String
+  originCountry      String
+  destinationCountry String
+  incoterm           String?
+  status             String             @default("DRAFT")
+  confirmationStatus ConfirmationStatus @default(UNKNOWN)
+  effectiveFrom      DateTime
+  effectiveTo        DateTime?
+  source             String?
+  notes              String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([originCountry, destinationCountry, effectiveFrom, effectiveTo])
+}
+
+model TariffVersion {
+  id                 String             @id @default(cuid())
+  hsCode             String
+  productDescription String
+  material           String?
+  originCountry      String
+  destinationCountry String
+  dutyRate           Decimal?
+  confirmationStatus ConfirmationStatus @default(UNKNOWN)
+  effectiveFrom      DateTime
+  effectiveTo        DateTime?
+  source             String?
+  notes              String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@unique([hsCode, originCountry, destinationCountry, effectiveFrom])
+}
+
+model MicroExportCase {
+  id                 String   @id @default(cuid())
+  orderId            String?  @unique
+  status             String   @default("DRAFT")
+  exporterName       String
+  customsStatus      String?
+  etgbStatus         String   @default("PENDING")
+  shipmentId         String?
+  invoiceDocumentId  String?
+  proformaDocumentId String?
+  etgbDocumentId     String?
+  customsDocumentId  String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([status, etgbStatus])
+}
+
+model TaxRuleVersion {
+  id                 String             @id @default(cuid())
+  name               String
+  taxType            String
+  rate               Decimal?
+  threshold          Decimal?
+  currency           String?
+  confirmationStatus ConfirmationStatus @default(UNKNOWN)
+  effectiveFrom      DateTime
+  effectiveTo        DateTime?
+  source             String?
+  notes              String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([taxType, effectiveFrom, effectiveTo])
+}
+
+model TaxObligation {
+  id                 String             @id @default(cuid())
+  taxType            String
+  periodStart        DateTime
+  periodEnd          DateTime
+  dueDate            DateTime
+  status             String             @default("PLANNED")
+  estimatedAmount    Decimal?
+  filedAmount        Decimal?
+  paidAmount         Decimal?
+  currency           String             @default("TRY")
+  confirmationStatus ConfirmationStatus @default(UNKNOWN)
+  filingDocumentId   String?
+  paymentDocumentId  String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([status, dueDate])
+}
+
+model VatPeriod {
+  id                 String             @id @default(cuid())
+  year               Int
+  month              Int
+  outputVat          Decimal            @default(0)
+  inputVat           Decimal            @default(0)
+  estimatedPayable   Decimal            @default(0)
+  filedPayable       Decimal?
+  status             String             @default("OPEN")
+  confirmationStatus ConfirmationStatus @default(UNKNOWN)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@unique([year, month])
+}
+
+model IncomeTaxEstimate {
+  id                   String             @id @default(cuid())
+  year                 Int
+  period               String
+  taxableBusinessBase  Decimal
+  salaryIncomeIncluded Boolean            @default(false)
+  estimatedTax         Decimal
+  currency             String             @default("TRY")
+  assumptionsJson      Json
+  confirmationStatus   ConfirmationStatus @default(UNKNOWN)
+  createdAt            DateTime           @default(now())
+
+  @@unique([year, period])
+}
+
+model SgkMonthStatus {
+  id                 String             @id @default(cuid())
+  year               Int
+  month              Int
+  fourAActive        Boolean?
+  fourBStatus        String             @default("UNKNOWN")
+  debtAmount         Decimal?
+  paymentAmount      Decimal?
+  confirmationStatus ConfirmationStatus @default(UNKNOWN)
+  notes              String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@unique([year, month])
+}
+
+model AccountantPeriod {
+  id                  String    @id @default(cuid())
+  year                Int
+  month               Int
+  status              String    @default("OPEN")
+  expectedDocuments   Int       @default(0)
+  uploadedDocuments   Int       @default(0)
+  missingDocuments    Int       @default(0)
+  sentAt              DateTime?
+  confirmedReceivedAt DateTime?
+  accountantNotes     String?
+  lockedAt            DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([year, month])
+  @@index([status, year, month])
 }

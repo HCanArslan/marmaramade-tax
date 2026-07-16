@@ -5,12 +5,30 @@ import {
 import { legalProfileWarnings } from "@/lib/compliance";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { prisma } from "@/lib/prisma";
+import {
+  MAKER_STATUS_WARNING,
+  businessConsistencyWarnings,
+} from "@/lib/business/consistency";
+import { createBusinessPersonAction } from "@/app/actions/operations";
 
 export default async function BusinessPage() {
   await requireAdmin({ redirectTo: "/business" });
-  const profiles = await prisma.legalOperatingProfile.findMany({
-    orderBy: { effectiveFrom: "desc" },
-  });
+  const [profiles, businessProfile, people] = await Promise.all([
+    prisma.legalOperatingProfile.findMany({
+      orderBy: { effectiveFrom: "desc" },
+    }),
+    prisma.businessProfile.findFirst({
+      where: { active: true },
+      orderBy: { effectiveFrom: "desc" },
+    }),
+    prisma.businessPerson.findMany({
+      where: { active: true },
+      include: {
+        roles: { where: { effectiveTo: null }, orderBy: { role: "asc" } },
+      },
+      orderBy: { fullName: "asc" },
+    }),
+  ]);
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <header>
@@ -25,6 +43,104 @@ export default async function BusinessPage() {
           changes. Historical orders retain their selected profile.
         </p>
       </header>
+      {businessProfile && (
+        <section className="card p-5">
+          <p className="eyebrow">Active legal structure</p>
+          <h2 className="mt-2 text-xl font-semibold">
+            {businessProfile.legalName}
+          </h2>
+          <p className="mt-1 text-sm text-stone-500">
+            {businessProfile.brandName} ·{" "}
+            {businessProfile.status.replaceAll("_", " ")}
+          </p>
+          {businessConsistencyWarnings(businessProfile).map((warning) => (
+            <p
+              className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-800"
+              key={warning}
+            >
+              {warning}
+            </p>
+          ))}
+        </section>
+      )}
+      <section className="card p-5">
+        <h2 className="font-semibold">Add person and role</h2>
+        <p className="mt-1 text-xs text-stone-500">
+          Roles record operational responsibility; they do not infer employment,
+          tax, SGK, or ownership status.
+        </p>
+        <form
+          action={createBusinessPersonAction}
+          className="mt-4 grid gap-3 md:grid-cols-3"
+        >
+          <input
+            className="field"
+            name="fullName"
+            placeholder="Full name"
+            required
+          />
+          <input
+            className="field"
+            name="displayName"
+            placeholder="Display name (optional)"
+          />
+          <input
+            className="field"
+            name="relationshipToOwner"
+            placeholder="Relationship to owner (optional)"
+          />
+          <select className="field" name="role" required>
+            {[
+              "LEGAL_OWNER",
+              "BUSINESS_OPERATOR",
+              "ETSY_ACCOUNT_HOLDER",
+              "EXPORTER",
+              "INVOICE_ISSUER",
+              "BANK_ACCOUNT_HOLDER",
+              "MAKER",
+              "DESIGNER",
+              "PHOTOGRAPHER",
+              "SHOP_MANAGER",
+              "PACKAGING_OPERATOR",
+              "CUSTOMER_SERVICE",
+              "EMPLOYEE",
+              "SUPPLIER",
+              "FAMILY_CONTRIBUTOR",
+              "ACCOUNTANT",
+              "OTHER",
+            ].map((role) => (
+              <option key={role}>{role}</option>
+            ))}
+          </select>
+          <input
+            className="field"
+            name="notes"
+            placeholder="Notes (optional)"
+          />
+          <button className="rounded-xl bg-jade px-4 py-2 text-sm font-medium text-white">
+            Add person
+          </button>
+        </form>
+      </section>
+      <section className="grid gap-3 md:grid-cols-2">
+        {people.map((person) => (
+          <div className="card p-5" key={person.id}>
+            <h2 className="font-semibold">{person.fullName}</h2>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {person.roles.map((role) => (
+                <span className="pill" key={role.id}>
+                  {role.role.replaceAll("_", " ")}
+                </span>
+              ))}
+            </div>
+            {person.fullName === "Selda" && (
+              <p className="mt-3 text-xs leading-5 text-amber-800">
+                {MAKER_STATUS_WARNING}
+              </p>
+            )}
+          </div>
+        ))}
+      </section>
       <section className="card p-5">
         <h2 className="font-semibold">New profile version</h2>
         <form
@@ -33,14 +149,26 @@ export default async function BusinessPage() {
         >
           {[
             ["name", "Version name", "MarmaraMade"],
-            ["legalSellerName", "Legal seller", "Selda"],
+            [
+              "legalSellerName",
+              "Legal seller",
+              "Hamit Can Arslan Sole Proprietorship",
+            ],
             ["makerName", "Maker", "Selda"],
-            ["etsyAccountHolderName", "Etsy account holder", "Selda"],
-            ["etsyTaxpayerName", "Etsy taxpayer", "Selda"],
-            ["bankAccountHolderName", "Bank holder", "Selda"],
-            ["exporterName", "Exporter", "Selda"],
-            ["shipEntegraAccountHolderName", "ShipEntegra holder", "Selda"],
-            ["businessStatus", "Business status", "PLANNING"],
+            [
+              "etsyAccountHolderName",
+              "Etsy account holder",
+              "Hamit Can Arslan",
+            ],
+            ["etsyTaxpayerName", "Etsy taxpayer", "Hamit Can Arslan"],
+            ["bankAccountHolderName", "Bank holder", "Hamit Can Arslan"],
+            ["exporterName", "Exporter", "Hamit Can Arslan"],
+            [
+              "shipEntegraAccountHolderName",
+              "ShipEntegra holder",
+              "Hamit Can Arslan",
+            ],
+            ["businessStatus", "Business status", "FORMATION_IN_PROGRESS"],
             [
               "sellerFeeVatTreatment",
               "Seller-fee VAT treatment",
@@ -89,6 +217,7 @@ export default async function BusinessPage() {
               "SOLE_PROPRIETORSHIP",
               "LIMITED_COMPANY",
               "PLANNING_ONLY",
+              "ARCHIVED",
             ]}
           />
           <Select

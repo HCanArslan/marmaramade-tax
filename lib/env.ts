@@ -19,6 +19,14 @@ const serverEnvSchema = z.object({
   ETSY_SCOPES: z.string().default("shops_r listings_r transactions_r"),
   ETSY_WEBHOOK_SIGNING_SECRET: optionalSecret,
   ETSY_RAW_PAYLOAD_RETENTION_DAYS: z.coerce.number().int().min(0).max(30).default(0),
+  SHIPENTEGRA_CLIENT_ID: optionalSecret,
+  SHIPENTEGRA_CLIENT_SECRET: optionalSecret,
+  SHIPENTEGRA_ENVIRONMENT: z.enum(["production"]).default("production"),
+  SHIPENTEGRA_OPERATION_MODE: z.enum(["ADMIN_CONFIRMED_SHIPMENT"]).default("ADMIN_CONFIRMED_SHIPMENT"),
+  SHIPENTEGRA_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(15000),
+  SHIPENTEGRA_TRACKING_SYNC_ENABLED: z.string().default("false").transform((value) => value === "true"),
+  SHIPENTEGRA_TRACKING_SYNC_HOURS: z.coerce.number().int().min(6).max(168).default(6),
+  CRON_SECRET: optionalSecret,
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
@@ -43,6 +51,17 @@ export function requireEtsySecrets() {
   const env = getServerEnv();
   if (!env.ETSY_API_KEYSTRING || !env.ETSY_SHARED_SECRET || !env.TOKEN_ENCRYPTION_KEY) throw new Error("Etsy integration is not configured.");
   return env as ServerEnv & { ETSY_API_KEYSTRING: string; ETSY_SHARED_SECRET: string; TOKEN_ENCRYPTION_KEY: string };
+}
+
+export function requireShipEntegraSecrets() {
+  const env = getServerEnv();
+  if (!env.SHIPENTEGRA_CLIENT_ID || !env.SHIPENTEGRA_CLIENT_SECRET) {
+    throw new Error("ShipEntegra integration is not configured.");
+  }
+  return env as ServerEnv & {
+    SHIPENTEGRA_CLIENT_ID: string;
+    SHIPENTEGRA_CLIENT_SECRET: string;
+  };
 }
 
 export function resetEnvCacheForTests() { cached = undefined; }

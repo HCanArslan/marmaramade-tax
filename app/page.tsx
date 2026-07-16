@@ -13,9 +13,25 @@ import { calculate } from "@/lib/domain/calculator";
 import { defaultCalculatorInput } from "@/lib/domain/defaults";
 import { formatMoney } from "@/lib/domain/money";
 import { requireAdmin } from "@/lib/auth/require-admin";
+import { prisma } from "@/lib/prisma";
 
 export default async function Dashboard() {
   await requireAdmin({ redirectTo: "/" });
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const [business, formationOpen, ordersThisMonth, pendingOrders, expensesThisMonth, taxDue, missingDocuments, availableUnits, unmatchedLedger, unmatchedBank, activeGoal] = await Promise.all([
+    prisma.businessProfile.findFirst({ where: { active: true }, orderBy: { effectiveFrom: "desc" } }),
+    prisma.formationTask.count({ where: { status: { notIn: ["COMPLETED", "NOT_APPLICABLE"] } } }),
+    prisma.order.count({ where: { orderDate: { gte: monthStart } } }),
+    prisma.order.count({ where: { orderStatus: { notIn: ["SHIPPED", "COMPLETED", "CANCELLED", "REFUNDED"] } } }),
+    prisma.expense.count({ where: { expenseDate: { gte: monthStart }, deletedAt: null } }),
+    prisma.taxObligation.count({ where: { status: { notIn: ["PAID", "CANCELLED"] }, dueDate: { gte: now } } }),
+    prisma.orderDocumentChecklistItem.count({ where: { required: true, verified: false } }),
+    prisma.productionUnit.count({ where: { inventoryStatus: "AVAILABLE" } }),
+    prisma.etsyLedgerEntry.count({ where: { manualReview: true } }),
+    prisma.bankTransaction.count({ where: { reconciliationStatus: { in: ["UNMATCHED", "NEEDS_REVIEW"] } } }),
+    prisma.profitGoal.findFirst({ where: { endDate: { gte: now } }, orderBy: { startDate: "asc" } }),
+  ]);
   const result = calculate(defaultCalculatorInput);
   const profit = result.totals.estimatedAfterReserveProfit;
   return (
@@ -37,6 +53,9 @@ export default async function Dashboard() {
           Price a bag <ArrowRight size={16} />
         </Link>
       </header>
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
+        Active legal structure: Hamit Can Arslan — Sole Proprietorship
+      </div>
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric
           label="Example sale"
@@ -159,6 +178,14 @@ export default async function Dashboard() {
             <strong className="float-right">$28.95</strong>
           </div>
         </div>
+      </section>
+      <section className="grid gap-5 xl:grid-cols-3">
+        <div className="card p-5"><p className="eyebrow">Business</p><h2 className="mt-2 font-semibold">{business?.legalName ?? "Profile missing"}</h2><p className="mt-2 text-sm text-stone-500">{business?.status.replaceAll("_", " ") ?? "Create an active profile"} · {formationOpen} formation items open</p></div>
+        <div className="card p-5"><p className="eyebrow">Sales & cash records</p><h2 className="mt-2 font-semibold">{ordersThisMonth} orders this month</h2><p className="mt-2 text-sm text-stone-500">{pendingOrders} pending · {expensesThisMonth} expense records</p></div>
+        <div className="card p-5"><p className="eyebrow">Goal</p><h2 className="mt-2 font-semibold">{activeGoal ? `${activeGoal.targetProfitAmount.toFixed(2)} ${activeGoal.targetProfitCurrency}` : "No active goal"}</h2><p className="mt-2 text-sm text-stone-500">{activeGoal?.planningMode.replaceAll("_", " ") ?? "Create a monthly goal"}</p></div>
+        <div className="card p-5"><p className="eyebrow">Documents & liabilities</p><h2 className="mt-2 font-semibold">{missingDocuments} documents need verification</h2><p className="mt-2 text-sm text-stone-500">{taxDue} upcoming tax obligations</p></div>
+        <div className="card p-5"><p className="eyebrow">Inventory</p><h2 className="mt-2 font-semibold">{availableUnits} finished units available</h2><p className="mt-2 text-sm text-stone-500">Material balances are tracked by purchase lot.</p></div>
+        <div className="card p-5"><p className="eyebrow">Reconciliation</p><h2 className="mt-2 font-semibold">{unmatchedLedger + unmatchedBank} items need review</h2><p className="mt-2 text-sm text-stone-500">{unmatchedLedger} Etsy ledger · {unmatchedBank} bank</p></div>
       </section>
     </div>
   );

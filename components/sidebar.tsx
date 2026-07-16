@@ -14,6 +14,7 @@ import {
   Landmark,
   PackageCheck,
   Scale,
+  ScrollText,
   Settings,
   ShieldCheck,
   Ship,
@@ -25,18 +26,34 @@ import { cn } from "@/lib/utils";
 const links = [
   ["/", "Dashboard", Gauge],
   ["/products", "Products", Boxes],
+  ["/materials", "Materials", Boxes],
+  ["/production", "Production", PackageCheck],
+  ["/inventory", "Inventory", Boxes],
   ["/calculator", "Calculator", Calculator],
   ["/goals", "Monthly Goals", Target],
+  ["/sales-plan", "Sales Plan", Target],
   ["/orders", "Orders", PackageCheck],
+  ["/invoices", "Invoices", FileArchive],
   ["/documents", "Documents", FileArchive],
   ["/shipping", "Shipping", Ship],
+  ["/shipentegra", "ShipEntegra", Ship],
   ["/customs", "Customs", Landmark],
   ["/fees", "Etsy fees", CircleDollarSign],
   ["/etsy-import", "Etsy import", Import],
+  ["/etsy-payouts", "Etsy payouts", WalletCards],
   ["/reconciliation", "Reconciliation", Scale],
+  ["/banking", "Banking", WalletCards],
+  ["/expenses", "Expenses", CircleDollarSign],
+  ["/cash-flow", "Cash flow", BarChart3],
   ["/business", "Business profiles", WalletCards],
+  ["/formation", "Formation", ShieldCheck],
   ["/compliance", "Compliance", ShieldCheck],
+  ["/customs-etgb", "Customs & ETGB", Landmark],
+  ["/accountant", "Accountant", FileArchive],
+  ["/taxes", "Taxes", Landmark],
+  ["/sgk", "SGK", ShieldCheck],
   ["/reports", "Reports", FileBarChart],
+  ["/audit-log", "Audit log", ScrollText],
   ["/settings", "Settings", Settings],
   ["/tax-exemption", "Tax exemption", Landmark],
 ] as const;
@@ -64,7 +81,7 @@ export function Sidebar() {
         </span>
       </div>
       <nav
-        className="flex gap-1 overflow-x-auto px-3 pb-3 lg:block lg:space-y-1 lg:px-3"
+        className="flex gap-1 overflow-x-auto px-3 pb-3 lg:block lg:max-h-[calc(100vh-190px)] lg:space-y-1 lg:overflow-y-auto lg:px-3"
         aria-label="Main navigation"
       >
         {links.map(([href, label, Icon]) => {
@@ -87,6 +104,12 @@ export function Sidebar() {
         })}
       </nav>
       <div className="mx-6 mt-auto hidden border-t border-white/10 pt-5 text-xs leading-5 text-white/45 lg:block lg:absolute lg:bottom-6 lg:left-0 lg:right-0">
+        Active legal structure:
+        <br />
+        <span className="text-white/75">
+          Hamit Can Arslan — Sole Proprietorship
+        </span>
+        <br />
         Türkiye → worldwide
         <br />
         USD revenue · TRY costs

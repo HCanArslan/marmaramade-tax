@@ -4,6 +4,7 @@ import {
 } from "@/app/actions/ledger";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { prisma } from "@/lib/prisma";
+import Decimal from "decimal.js";
 
 export default async function GoalsPage() {
   await requireAdmin({ redirectTo: "/goals" });
@@ -30,12 +31,13 @@ export default async function GoalsPage() {
           using realistic after-tax-and-reserve profit.
         </p>
       </header>
-      <section className="grid gap-3 sm:grid-cols-3">
+      <section className="grid gap-3 sm:grid-cols-4">
         <Metric
           label="Standard target"
           value="$1,000"
           note="Monthly realistic profit"
         />
+        <Metric label="Scale target" value="$2,500" note="Monthly realistic profit" />
         <Metric
           label="Growth target"
           value="$5,000"
@@ -76,6 +78,8 @@ export default async function GoalsPage() {
                 <option>PRODUCT_COMBINATION</option>
                 <option>CURRENT_INVENTORY</option>
                 <option>CUSTOM_MIX</option>
+                <option>SALES_PACE</option>
+                <option>CASH_FLOW_TARGET</option>
               </select>
             </label>
             <label className="text-xs text-stone-500">
@@ -116,13 +120,12 @@ export default async function GoalsPage() {
             unitProfitUsd?: number;
             exchangeRate?: number;
           };
-          const unit = Number(settings.unitProfitUsd || 0);
+          const unit = new Decimal(String(settings.unitProfitUsd || 0));
           const targetUsd =
             g.targetProfitCurrency === "USD"
-              ? Number(g.targetProfitAmount)
-              : Number(g.targetProfitAmount) /
-                Number(settings.exchangeRate || 1);
-          const units = unit > 0 ? Math.ceil(targetUsd / unit) : null;
+              ? new Decimal(g.targetProfitAmount.toString())
+              : new Decimal(g.targetProfitAmount.toString()).div(String(settings.exchangeRate || 1));
+          const units = unit.gt(0) ? targetUsd.div(unit).ceil().toNumber() : null;
           return (
             <article className="card p-5" key={g.id}>
               <div className="flex justify-between">

@@ -6,14 +6,12 @@ import {
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { prisma } from "@/lib/prisma";
 const sections = [
-  "SHOP_IDENTITY",
-  "SHIPPING_DEFAULT",
-  "CUSTOMS_DEFAULT",
-  "PACKAGE_DEFAULT",
-  "GOAL_DEFAULTS",
-  "RESERVES",
-  "DOCUMENT_RETENTION",
-  "DOCUMENT_REQUIREMENTS",
+  "COMPANY_IDENTITY", "LEGAL_OPERATING_PROFILE", "PEOPLE_AND_ROLES", "ACCOUNTANT", "BUSINESS_ADDRESS",
+  "BANK_ACCOUNTS", "PAYMENT_CARDS", "INVOICING", "E_DOCUMENT_PROVIDER", "CUSTOMS", "ETGB",
+  "PRODUCT_COSTS", "LABOR_PLANNING", "EXPENSE_CATEGORIES", "OVERHEAD_ALLOCATION", "FEE_PROFILES",
+  "VAT_PROFILES", "INCOME_TAX_PROFILES", "SGK_ASSUMPTIONS", "EXCHANGE_RATES", "SHOP_IDENTITY",
+  "SHIPPING_DEFAULT", "CUSTOMS_DEFAULT", "PACKAGE_DEFAULT", "GOAL_DEFAULTS", "RESERVES",
+  "DOCUMENT_RETENTION", "DOCUMENT_REQUIREMENTS", "DATA_RETENTION", "AUDIT", "NOTIFICATIONS",
 ] as const;
 export default async function SettingsPage() {
   await requireAdmin({ redirectTo: "/settings" });
@@ -70,6 +68,12 @@ export default async function SettingsPage() {
             href="/settings/etsy"
           >
             Read-only Etsy
+          </Link>
+          <Link
+            className="rounded-xl border px-3 py-2 text-sm"
+            href="/settings/shipentegra"
+          >
+            ShipEntegra
           </Link>
           <Link
             className="rounded-xl border px-3 py-2 text-sm"

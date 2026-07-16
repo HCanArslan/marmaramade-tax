@@ -10,6 +10,7 @@ Private financial planning and Etsy record keeping for MarmaraMade. The applicat
 - Tailwind CSS 4.3
 - Zod 4, Recharts 3, Vitest 4
 - Private Vercel Blob document storage (server-controlled upload/download)
+- Server-only ShipEntegra v4.0.4 planning quotes and tracking integration
 - Node.js 20.19 or newer
 
 Production packages are pinned, and patched transitive versions are enforced through npm `overrides`. `npm audit` currently reports zero vulnerabilities.
@@ -57,6 +58,8 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
 Etsy variables are optional until Etsy integration is enabled. `ETSY_REDIRECT_URI` must then exactly match the stable production callback registered with Etsy.
+
+ShipEntegra variables are optional until its integration is enabled. See [ShipEntegra integration](SHIPENTEGRA_INTEGRATION.md). Live quotes are non-mutating. Shipment creation is fail-closed because the current official specification does not publish the `POST /orders` success response contract.
 
 ## Database commands
 
@@ -113,4 +116,4 @@ Detailed workflows: [goal planning](docs/GOAL_PLANNING.md), [compliance](docs/CO
 
 ## Disclaimer
 
-MarmaraMade Ledger is a financial-planning and record-keeping tool. It does not determine legal entitlement to artisan tax exemption, pension continuation, Bağ-Kur status, tax treatment, customs classification, or official accounting profit. Those matters must be confirmed through current official guidance and qualified professional advice.
+MarmaraMade Ledger is a private financial-planning, operational record-keeping, and document-management application. It does not determine official tax liability, expense deductibility, VAT treatment, SGK or Bağ-Kur liability, employment status, customs classification, invoice validity, or legal compliance. Final treatment must be confirmed using current official guidance and qualified professional advice.
