@@ -44,7 +44,7 @@ Use the ready-to-send Turkish checklist in [`docs/SHIPENTEGRA_SUPPORT_REQUEST.md
 
 ## Tracking, documents, and actual costs
 
-Tracking uses `/logistics/shipments/activities` manually or through the six-hour Vercel Cron. Event IDs hash tracking number, date, and text. Requests have timeouts and rate-limit errors are actionable.
+Tracking uses `/logistics/shipments/activities` manually or through the daily Vercel Cron at 03:00 UTC. Event IDs hash tracking number, date, and text. Requests have timeouts and rate-limit errors are actionable.
 
 Document types exposed by `/logistics/files` are E-Archive, MSDS, TSCA, FDA, and Other. ETGB download is not documented, so ETGB remains a manual private upload. Label/invoice URLs are accepted only from `files.shipentegra.com` and stored privately with checksums. Actual shipping is an adjustment with an explicit source; it never overwrites the planning quote or immutable order snapshot.
 

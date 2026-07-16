@@ -42,7 +42,7 @@ If Etsy integration is enabled, add:
 
 Use a stable production domain for Etsy. Do not register changing preview URLs as the primary callback.
 
-If ShipEntegra is enabled, add `SHIPENTEGRA_CLIENT_ID`, `SHIPENTEGRA_CLIENT_SECRET`, `SHIPENTEGRA_ENVIRONMENT=production`, `SHIPENTEGRA_OPERATION_MODE=ADMIN_CONFIRMED_SHIPMENT`, `SHIPENTEGRA_REQUEST_TIMEOUT_MS`, `SHIPENTEGRA_TRACKING_SYNC_ENABLED`, `SHIPENTEGRA_TRACKING_SYNC_HOURS`, and `CRON_SECRET`. Production requests remain server-only, and shipment creation remains fail-closed until ShipEntegra confirms the documented-response gaps listed in `SHIPENTEGRA_INTEGRATION.md`. The committed `vercel.json` schedules tracking every six hours; the route requires the cron bearer secret.
+If ShipEntegra is enabled, add `SHIPENTEGRA_CLIENT_ID`, `SHIPENTEGRA_CLIENT_SECRET`, `SHIPENTEGRA_ENVIRONMENT=production`, `SHIPENTEGRA_OPERATION_MODE=ADMIN_CONFIRMED_SHIPMENT`, `SHIPENTEGRA_REQUEST_TIMEOUT_MS`, `SHIPENTEGRA_TRACKING_SYNC_ENABLED`, `SHIPENTEGRA_TRACKING_SYNC_HOURS`, and `CRON_SECRET`. Production requests remain server-only, and shipment creation remains fail-closed until ShipEntegra confirms the documented-response gaps listed in `SHIPENTEGRA_INTEGRATION.md`. The committed `vercel.json` schedules tracking once daily at 03:00 UTC so it remains compatible with Vercel Hobby; the route requires the cron bearer secret.
 
 ## 3. Apply the database migration
 
