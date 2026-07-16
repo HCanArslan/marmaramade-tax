@@ -92,7 +92,10 @@ export function calculate(input: CalculatorInput): CalculationResult {
   addUsd("Damage reserve", "Reserves", damageReserve, "Gross revenue × expected damage rate", grossRevenue, input.damageReserveRate);
 
   const etsyFeesUsd = sum([...Object.values(feeUsd), vatUsd, convert(money(sum([processingFixedTry, depositTry, vatTry]), "TRY"), rate, "USD").amount]);
-  const productExLaborUsd = convert(money(sum([materialTry, packagingTry, additionalTry]), "TRY"), rate, "USD").amount;
+  const materialCostUsd = convert(money(materialTry, "TRY"), rate, "USD").amount;
+  const packagingCostUsd = convert(money(packagingTry, "TRY"), rate, "USD").amount;
+  const additionalDirectCostUsd = convert(money(additionalTry, "TRY"), rate, "USD").amount;
+  const productExLaborUsd = sum([materialCostUsd, packagingCostUsd, additionalDirectCostUsd]);
   const laborUsd = convert(money(laborTry, "TRY"), rate, "USD").amount;
   const domesticUsd = convert(money(domesticTry, "TRY"), rate, "USD").amount;
   const overheadUsd = convert(money(overheadTry, "TRY"), rate, "USD").amount;
@@ -115,7 +118,7 @@ export function calculate(input: CalculatorInput): CalculationResult {
     lines,
     totals: {
       grossRevenue, etsyBaseFees: etsyFeesUsd.minus(vatUsd).minus(convert(money(vatTry, "TRY"), rate, "USD").amount), etsyFeeVatUsd: vatUsd.plus(convert(money(vatTry, "TRY"), rate, "USD").amount),
-      totalEtsyFees: etsyFeesUsd, directProductCostUsd: productExLaborUsd.plus(laborUsd), laborUsd, domesticLogisticsUsd: domesticUsd,
+      totalEtsyFees: etsyFeesUsd, directProductCostUsd: productExLaborUsd.plus(laborUsd), materialCostUsd, laborUsd, packagingCostUsd, additionalDirectCostUsd, domesticLogisticsUsd: domesticUsd,
       internationalShippingUsd: shippingUsd, customsAndTariffUsd: customsUsd, allocatedBusinessOverheadUsd: overheadUsd, advertisingUsd,
       contributionProfit, profitAfterLabor, operatingProfit, estimatedPreTaxProfit, taxReserve, estimatedAfterReserveProfit,
       totalCostUsd, totalCostTry: totalCostUsd.mul(rate), estimatedAfterReserveProfitTry: estimatedAfterReserveProfit.mul(rate),

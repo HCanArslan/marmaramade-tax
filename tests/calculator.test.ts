@@ -85,6 +85,21 @@ describe("MarmaraMade calculation engine", () => {
     expect(
       calc({ materialCostTry: "250" }).lines.find((l) => l.name === "Material"),
     ).toMatchObject({ nativeAmount: "250", nativeCurrency: "TRY" }));
+  it("keeps material, labour, packaging, and other direct costs separate", () => {
+    const totals = calc({
+      materialCostTry: "100",
+      laborHours: "2",
+      laborHourlyRateTry: "50",
+      packagingCostTry: "25",
+      additionalDirectCostTry: "10",
+      usdTryRate: "50",
+    }).totals;
+    expect(totals.materialCostUsd.toNumber()).toBe(2);
+    expect(totals.laborUsd.toNumber()).toBe(2);
+    expect(totals.packagingCostUsd.toNumber()).toBe(0.5);
+    expect(totals.additionalDirectCostUsd.toNumber()).toBe(0.2);
+    expect(totals.directProductCostUsd.toNumber()).toBe(4.7);
+  });
   it("preserves native USD values", () =>
     expect(
       calc({ internationalShippingUsd: "34.21" }).lines.find(

@@ -64,6 +64,16 @@ export default async function CalculatorPage() {
   );
   const presets = products.flatMap((product) => {
     const cost = product.costVersions[0];
+    const materialWithWastage = cost
+      ? cost.materialCostTry.plus(
+          cost.materialCostTry.mul(cost.wastageRate).div(100),
+        )
+      : new Decimal(0);
+    const otherDirectCosts = cost
+      ? cost.additionalDirectCostTry
+          .plus(cost.additionalMakerPaymentTry)
+          .plus(cost.allocatedEquipmentCostTry)
+      : new Decimal(0);
     return product.etsyListingLinks.map(({ listing }) => {
       const pricing = resolveListingPricing(listing);
       return {
@@ -80,12 +90,11 @@ export default async function CalculatorPage() {
         discountSource: pricing.source,
         availableQuantity: listing.state === "active" ? listing.quantity : 0,
         state: listing.state,
-        materialCostTry: cost?.materialCostTry.toString() ?? "0",
+        materialCostTry: materialWithWastage.toString(),
         laborHours: cost?.laborHours.toString() ?? "0",
         laborHourlyRateTry: cost?.laborHourlyRateTry.toString() ?? "0",
         packagingCostTry: cost?.packagingCostTry.toString() ?? "0",
-        additionalDirectCostTry:
-          cost?.additionalDirectCostTry.toString() ?? "0",
+        additionalDirectCostTry: otherDirectCosts.toString(),
       };
     });
   });

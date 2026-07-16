@@ -1022,6 +1022,86 @@ export async function createProductCostAction(formData: FormData) {
   });
   redirect(`/products?cost=${version.id}`);
 }
+
+export async function duplicateProductCostSetupAction(formData: FormData) {
+  const actor = await adminActor("/products");
+  const v = z
+    .object({
+      sourceProductCostVersionId: text,
+      targetProductId: text,
+      effectiveFrom: date,
+    })
+    .parse(Object.fromEntries(formData));
+  const duplicated = await prisma.$transaction(async (tx) => {
+    const source = await tx.productCostVersion.findUniqueOrThrow({
+      where: { id: v.sourceProductCostVersionId },
+      include: { materialComponents: true, product: true },
+    });
+    if (source.productId === v.targetProductId) {
+      throw new Error("Choose a different destination product.");
+    }
+    const targetProduct = await tx.product.findUniqueOrThrow({
+      where: { id: v.targetProductId },
+    });
+    const existing = await tx.productCostVersion.findUnique({
+      where: {
+        productId_effectiveFrom: {
+          productId: targetProduct.id,
+          effectiveFrom: v.effectiveFrom,
+        },
+      },
+    });
+    if (existing) {
+      throw new Error(
+        "The destination product already has a cost version on that effective date.",
+      );
+    }
+    const copy = await tx.productCostVersion.create({
+      data: {
+        productId: targetProduct.id,
+        effectiveFrom: v.effectiveFrom,
+        materialCostTry: source.materialCostTry,
+        laborHours: source.laborHours,
+        laborHourlyRateTry: source.laborHourlyRateTry,
+        packagingCostTry: source.packagingCostTry,
+        additionalDirectCostTry: source.additionalDirectCostTry,
+        wastageRate: source.wastageRate,
+        additionalMakerPaymentTry: source.additionalMakerPaymentTry,
+        allocatedEquipmentCostTry: source.allocatedEquipmentCostTry,
+        templateType: source.templateType,
+        changeReason: `Duplicated from ${source.product.sku}`,
+        notes: source.notes,
+        materialComponents: {
+          create: source.materialComponents.map((component) => ({
+            productId: targetProduct.id,
+            componentType: component.componentType,
+            description: component.description,
+            quantity: component.quantity,
+            unitCostTry: component.unitCostTry,
+            totalCostTry: component.totalCostTry,
+          })),
+        },
+      },
+    });
+    await tx.auditLog.create({
+      data: {
+        entityType: "ProductCostVersion",
+        entityId: copy.id,
+        action: "FULL_SETUP_DUPLICATED",
+        actor,
+        afterJson: JSON.stringify({
+          sourceProductCostVersionId: source.id,
+          sourceProductId: source.productId,
+          targetProductId: targetProduct.id,
+          materialComponents: source.materialComponents.length,
+        }),
+      },
+    });
+    return copy;
+  });
+  revalidateProductCosts();
+  redirect(`/products?cost=${duplicated.id}`);
+}
 export async function createFeeRuleAction(formData: FormData) {
   const actor = await adminActor("/fees");
   const v = z
@@ -1119,22 +1199,40 @@ export async function copyProductMaterialAction(formData: FormData) {
   const v = z
     .object({
       sourceId: text,
-      targetProductCostVersionId: text,
+      targetProductId: text,
     })
     .parse(Object.fromEntries(formData));
   await prisma.$transaction(async (tx) => {
-    const [source, target] = await Promise.all([
-      tx.productMaterialCost.findUniqueOrThrow({ where: { id: v.sourceId } }),
-      tx.productCostVersion.findUniqueOrThrow({
-        where: { id: v.targetProductCostVersionId },
-      }),
-    ]);
-    if (source.productId === target.productId) {
-      throw new Error("Choose a cost version belonging to another product.");
+    const source = await tx.productMaterialCost.findUniqueOrThrow({
+      where: { id: v.sourceId },
+    });
+    if (source.productId === v.targetProductId) {
+      throw new Error("Choose another product.");
     }
+    await tx.product.findUniqueOrThrow({ where: { id: v.targetProductId } });
+    let target = await tx.productCostVersion.findFirst({
+      where: { productId: v.targetProductId },
+      orderBy: { effectiveFrom: "desc" },
+    });
+    target ??= await tx.productCostVersion.create({
+      data: {
+        productId: v.targetProductId,
+        effectiveFrom: new Date(),
+        materialCostTry: 0,
+        laborHours: 0,
+        laborHourlyRateTry: 0,
+        packagingCostTry: 0,
+        additionalDirectCostTry: 0,
+        wastageRate: 0,
+        additionalMakerPaymentTry: 0,
+        allocatedEquipmentCostTry: 0,
+        changeReason:
+          "Created automatically while copying a material component",
+      },
+    });
     const copied = await tx.productMaterialCost.create({
       data: {
-        productId: target.productId,
+        productId: v.targetProductId,
         productCostVersionId: target.id,
         componentType: source.componentType,
         description: source.description,
@@ -1152,7 +1250,7 @@ export async function copyProductMaterialAction(formData: FormData) {
         actor,
         afterJson: JSON.stringify({
           sourceId: source.id,
-          targetProductId: target.productId,
+          targetProductId: v.targetProductId,
           targetProductCostVersionId: target.id,
         }),
       },

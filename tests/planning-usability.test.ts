@@ -108,15 +108,26 @@ describe("planning usability", () => {
   });
 
   it("supports copying and deleting material components while keeping totals synchronized", async () => {
-    const [products, actions] = await Promise.all([
+    const [products, actions, calculator, calculatorPage] = await Promise.all([
       source("app/products/page.tsx"),
       source("app/actions/ledger.ts"),
+      source("components/calculator-workspace.tsx"),
+      source("app/calculator/page.tsx"),
     ]);
     expect(products).toContain("copyProductMaterialAction");
     expect(products).toContain("deleteProductMaterialAction");
     expect(products).toContain("Copy to another product");
+    expect(products).toContain("Duplicate a complete cost setup");
+    expect(products).toContain("destination does not need an existing cost");
     expect(actions).toContain("syncMaterialComponentTotal");
+    expect(actions).toContain("duplicateProductCostSetupAction");
+    expect(actions).toContain('action: "FULL_SETUP_DUPLICATED"');
     expect(actions).toContain('action: "COPIED_TO_PRODUCT"');
     expect(actions).toContain('action: "DELETED"');
+    expect(calculator).toContain('label="Materials"');
+    expect(calculator).toContain('label="Labour"');
+    expect(calculator).toContain('label="Packaging"');
+    expect(calculatorPage).toContain("materialWithWastage");
+    expect(calculatorPage).toContain("additionalMakerPaymentTry");
   });
 });

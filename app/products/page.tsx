@@ -19,6 +19,7 @@ import {
   createProductMaterialAction,
   copyProductMaterialAction,
   deleteProductMaterialAction,
+  duplicateProductCostSetupAction,
 } from "@/app/actions/ledger";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { getActiveConnection } from "@/lib/etsy/auth";
@@ -143,10 +144,70 @@ export default async function ProductsPage() {
       </section>
 
       <section className="card p-5">
+        <h2 className="font-semibold">Duplicate a complete cost setup</h2>
+        <p className="mt-1 text-sm text-stone-500">
+          Copy materials, labour, packaging, other direct costs, wastage, maker
+          payment, equipment allocation, and every itemized component directly
+          to another product. The destination does not need an existing cost
+          version.
+        </p>
+        <form
+          action={duplicateProductCostSetupAction}
+          className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(180px,1fr)_auto] sm:items-end"
+        >
+          <label className="text-xs text-stone-500">
+            Copy from cost version
+            <select
+              className="field mt-1"
+              name="sourceProductCostVersionId"
+              required
+            >
+              <option value="">Choose source</option>
+              {allProducts.flatMap((product) =>
+                product.costVersions.map((costVersion, index) => (
+                  <option value={costVersion.id} key={costVersion.id}>
+                    {product.sku} ·{" "}
+                    {costVersion.effectiveFrom.toLocaleDateString("en-GB")}
+                    {index === 0 ? " · latest" : ""}
+                  </option>
+                )),
+              )}
+            </select>
+          </label>
+          <label className="text-xs text-stone-500">
+            Duplicate to product
+            <select className="field mt-1" name="targetProductId" required>
+              <option value="">Choose destination product</option>
+              {allProducts.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.sku} · {product.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-stone-500">
+            Effective from
+            <input
+              className="field mt-1"
+              name="effectiveFrom"
+              type="date"
+              defaultValue={new Date().toISOString().slice(0, 10)}
+              required
+            />
+          </label>
+          <button className="inline-flex items-center justify-center gap-2 rounded-xl bg-jade px-4 py-2.5 text-sm text-white">
+            <Copy size={15} /> Duplicate full setup
+          </button>
+        </form>
+      </section>
+
+      <section className="card p-5">
         <h2 className="font-semibold">Material components</h2>
         <p className="mt-1 text-xs text-stone-500">
           Yarn, lining, handles, base, closure, packaging, labels, consumables,
-          and other direct materials remain itemized.
+          and other direct materials remain itemized. Calculator uses only the
+          latest cost version for each product; deleting a component from an
+          older version does not change the current plan.
         </p>
         <form
           action={createProductMaterialAction}
@@ -215,16 +276,16 @@ export default async function ProductsPage() {
             </thead>
             <tbody>
               {allProducts.flatMap((product) =>
-                product.costVersions.flatMap((costVersion) =>
+                product.costVersions.flatMap((costVersion, versionIndex) =>
                   costVersion.materialComponents.map((component) => {
-                    const copyTargets = allProducts.flatMap((targetProduct) =>
-                      targetProduct.id === product.id
-                        ? []
-                        : targetProduct.costVersions.map((targetVersion) => ({
-                            id: targetVersion.id,
-                            label: `${targetProduct.sku} · ${targetVersion.effectiveFrom.toLocaleDateString("en-GB")}`,
-                          })),
-                    );
+                    const copyTargets = allProducts
+                      .filter(
+                        (targetProduct) => targetProduct.id !== product.id,
+                      )
+                      .map((targetProduct) => ({
+                        id: targetProduct.id,
+                        label: targetProduct.sku,
+                      }));
                     return (
                       <tr className="border-t align-top" key={component.id}>
                         <td className="p-3">
@@ -233,6 +294,9 @@ export default async function ProductsPage() {
                             {costVersion.effectiveFrom.toLocaleDateString(
                               "en-GB",
                             )}
+                            {versionIndex === 0
+                              ? " · latest (Calculator)"
+                              : " · historical"}
                           </span>
                         </td>
                         <td className="py-3">
@@ -261,7 +325,7 @@ export default async function ProductsPage() {
                               />
                               <select
                                 className="field py-2 text-xs"
-                                name="targetProductCostVersionId"
+                                name="targetProductId"
                                 aria-label={`Copy ${component.componentType} to product`}
                                 required
                               >
@@ -278,7 +342,7 @@ export default async function ProductsPage() {
                             </form>
                           ) : (
                             <span className="text-xs text-stone-400">
-                              Create a cost version for another product first.
+                              No other product is available.
                             </span>
                           )}
                         </td>

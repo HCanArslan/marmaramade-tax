@@ -178,6 +178,18 @@ export function CalculatorWorkspace({
             productCosts: totals.productCosts.plus(
               row.calculation.totals.directProductCostUsd.mul(quantity),
             ),
+            materials: totals.materials.plus(
+              row.calculation.totals.materialCostUsd.mul(quantity),
+            ),
+            labor: totals.labor.plus(
+              row.calculation.totals.laborUsd.mul(quantity),
+            ),
+            packaging: totals.packaging.plus(
+              row.calculation.totals.packagingCostUsd.mul(quantity),
+            ),
+            otherDirect: totals.otherDirect.plus(
+              row.calculation.totals.additionalDirectCostUsd.mul(quantity),
+            ),
             shipping: totals.shipping.plus(
               row.calculation.totals.internationalShippingUsd.mul(quantity),
             ),
@@ -203,6 +215,10 @@ export function CalculatorWorkspace({
           revenue: new Decimal(0),
           fees: new Decimal(0),
           productCosts: new Decimal(0),
+          materials: new Decimal(0),
+          labor: new Decimal(0),
+          packaging: new Decimal(0),
+          otherDirect: new Decimal(0),
           shipping: new Decimal(0),
           customs: new Decimal(0),
           overhead: new Decimal(0),
@@ -581,9 +597,12 @@ export function CalculatorWorkspace({
                 </p>
               </div>
               <div className="grid gap-px bg-stone-200 sm:grid-cols-2 xl:grid-cols-4">
+                <Deduction label="Materials" value={planTotals.materials} />
+                <Deduction label="Labour" value={planTotals.labor} />
+                <Deduction label="Packaging" value={planTotals.packaging} />
                 <Deduction
-                  label="Product + labor"
-                  value={planTotals.productCosts}
+                  label="Other direct product costs"
+                  value={planTotals.otherDirect}
                 />
                 <Deduction
                   label="Shipping / ETGB service"
@@ -678,6 +697,24 @@ export function CalculatorWorkspace({
                           {calculation
                             ? `${missing.length ? "Preliminary " : ""}${formatMoney(calculation.totals.estimatedAfterReserveProfit, "USD")}`
                             : "USD only"}
+                          {calculation && (
+                            <span className="mt-1 block max-w-52 text-[11px] leading-4 text-stone-500">
+                              Materials{" "}
+                              {formatMoney(
+                                calculation.totals.materialCostUsd,
+                                "USD",
+                              )}{" "}
+                              · Labour{" "}
+                              {formatMoney(calculation.totals.laborUsd, "USD")}{" "}
+                              · Packaging/other{" "}
+                              {formatMoney(
+                                calculation.totals.packagingCostUsd.plus(
+                                  calculation.totals.additionalDirectCostUsd,
+                                ),
+                                "USD",
+                              )}
+                            </span>
+                          )}
                           {quantity > 0 && missing.length > 0 && (
                             <span className="mt-1 block max-w-48 text-[11px] leading-4 text-red-700">
                               Missing: {missing.join(", ")}
