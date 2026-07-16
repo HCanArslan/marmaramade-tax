@@ -9,6 +9,7 @@ Private financial planning and Etsy record keeping for MarmaraMade. The applicat
 - Prisma 7.8 with the PostgreSQL driver adapter
 - Tailwind CSS 4.3
 - Zod 4, Recharts 3, Vitest 4
+- Private Vercel Blob document storage (server-controlled upload/download)
 - Node.js 20.19 or newer
 
 Production packages are pinned, and patched transitive versions are enforced through npm `overrides`. `npm audit` currently reports zero vulnerabilities.
@@ -40,6 +41,8 @@ ADMIN_PASSWORD_HASH="$2b$12$..."
 ```
 
 `NEXTAUTH_URL` is optional on Vercel when system environment variables are exposed. If you use a stable custom domain, setting it explicitly to that HTTPS origin is recommended.
+
+Private documents additionally require `BLOB_READ_WRITE_TOKEN`; `DOCUMENT_MAX_SIZE_MB` defaults to 25. See [Document storage](docs/DOCUMENT_STORAGE.md).
 
 Generate the admin password hash locally:
 
@@ -98,6 +101,16 @@ npm run guard:etsy-readonly
 
 See [SECURITY.md](SECURITY.md) and [ETSY_INTEGRATION.md](ETSY_INTEGRATION.md) for the security model and read-only Etsy boundary.
 
+## Operating modules
+
+- Effective-dated legal operating profiles support artisan-exemption, sole-proprietorship, company, and planning-only scenarios without changing historical orders.
+- Documents and compliance cases retain evidence and official responses.
+- Shipping and customs quote forms store dated comparison inputs.
+- Monthly Goals saves a planning exchange-rate assumption and immutable goal versions.
+- Confirmed Etsy orders retain immutable calculation lines; later actuals belong in adjustments.
+
+Detailed workflows: [goal planning](docs/GOAL_PLANNING.md), [compliance](docs/COMPLIANCE_WORKFLOW.md), [artisan exemption](docs/ARTISAN_TAX_EXEMPTION.md), [sole proprietorship](docs/SOLE_PROPRIETORSHIP_MODE.md), and [order dossiers](docs/ORDER_DOSSIER.md).
+
 ## Disclaimer
 
-This application is for financial planning and record keeping. It does not provide legal, tax, customs, or accounting advice.
+MarmaraMade Ledger is a financial-planning and record-keeping tool. It does not determine legal entitlement to artisan tax exemption, pension continuation, Bağ-Kur status, tax treatment, customs classification, or official accounting profit. Those matters must be confirmed through current official guidance and qualified professional advice.

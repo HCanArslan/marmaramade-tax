@@ -32,25 +32,34 @@ model Product {
   costVersions       ProductCostVersion[]
   orderItems         OrderItem[]
   etsyListingLinks   EtsyListingProductLink[]
+  materialCosts      ProductMaterialCost[]
+  documents          StoredDocument[]
+  goalProducts       GoalScenarioProduct[]
 
   @@index([active])
 }
 
 model ProductCostVersion {
-  id                      String      @id @default(cuid())
-  productId               String
-  effectiveFrom           DateTime
-  effectiveTo             DateTime?
-  materialCostTry         Decimal
-  laborHours              Decimal
-  laborHourlyRateTry      Decimal
-  packagingCostTry        Decimal
-  additionalDirectCostTry Decimal
-  notes                   String?
-  createdAt               DateTime    @default(now())
-  updatedAt               DateTime    @updatedAt
-  product                 Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
-  orderItems              OrderItem[]
+  id                        String                @id @default(cuid())
+  productId                 String
+  effectiveFrom             DateTime
+  effectiveTo               DateTime?
+  materialCostTry           Decimal
+  laborHours                Decimal
+  laborHourlyRateTry        Decimal
+  packagingCostTry          Decimal
+  additionalDirectCostTry   Decimal
+  notes                     String?
+  createdAt                 DateTime              @default(now())
+  updatedAt                 DateTime              @updatedAt
+  product                   Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems                OrderItem[]
+  materialComponents        ProductMaterialCost[]
+  wastageRate               Decimal               @default(0)
+  additionalMakerPaymentTry Decimal               @default(0)
+  allocatedEquipmentCostTry Decimal               @default(0)
+  changeReason              String?
+  templateType              String?
 
   @@unique([productId, effectiveFrom])
   @@index([productId, effectiveFrom, effectiveTo])
@@ -92,6 +101,7 @@ model FeeProfile {
   rules           FeeRule[]
   orders          Order[]
   snapshots       OrderCostSnapshot[]
+  goalVersions    ProfitGoalVersion[]
 
   @@unique([marketplace, country, effectiveFrom])
   @@index([effectiveFrom, effectiveTo])
@@ -150,7 +160,7 @@ model BusinessProfileVersion {
 }
 
 model ShippingQuote {
-  id                 String    @id @default(cuid())
+  id                 String           @id @default(cuid())
   originCountry      String
   originCity         String
   destinationCountry String
@@ -176,15 +186,24 @@ model ShippingQuote {
   expirationDate     DateTime?
   source             String?
   notes              String?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
   orders             Order[]
+  aggregator         String?
+  zone               String?
+  packageProfileName String?
+  baseShippingPrice  Decimal?
+  planningDefault    Boolean          @default(false)
+  activeExpected     Boolean          @default(false)
+  transitDaysMin     Int?
+  transitDaysMax     Int?
+  documents          StoredDocument[]
 
   @@index([destinationCountry, quoteDate])
 }
 
 model CustomsQuote {
-  id                     String    @id @default(cuid())
+  id                     String           @id @default(cuid())
   originCountry          String
   destinationCountry     String
   hsCode                 String
@@ -205,9 +224,14 @@ model CustomsQuote {
   expirationDate         DateTime?
   source                 String?
   notes                  String?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
   orders                 Order[]
+  productMaterial        String?
+  productCategory        String?
+  destinationTax         Decimal          @default(0)
+  effectiveFrom          DateTime?
+  documents              StoredDocument[]
 
   @@index([destinationCountry, hsCode, quoteDate])
 }
@@ -222,39 +246,49 @@ model ExchangeRateSnapshot {
   createdAt     DateTime            @default(now())
   orders        Order[]
   snapshots     OrderCostSnapshot[]
+  goalVersions  ProfitGoalVersion[]
 
   @@unique([baseCurrency, quoteCurrency, capturedAt])
   @@index([capturedAt])
 }
 
 model Order {
-  id                         String                 @id @default(cuid())
-  orderNumber                String                 @unique
+  id                         String                  @id @default(cuid())
+  orderNumber                String                  @unique
   orderDate                  DateTime
   marketplace                String
   destinationCountry         String
   destinationRegion          String?
   currency                   String
   orderStatus                String
-  offsiteAdAttributed        Boolean                @default(false)
-  trailingEtsyRevenueUsd     Decimal                @default(0)
-  currencyConversionRequired Boolean                @default(true)
-  depositFeeApplies          Boolean                @default(false)
+  offsiteAdAttributed        Boolean                 @default(false)
+  trailingEtsyRevenueUsd     Decimal                 @default(0)
+  currencyConversionRequired Boolean                 @default(true)
+  depositFeeApplies          Boolean                 @default(false)
   businessProfileVersionId   String
   feeProfileId               String
   exchangeRateSnapshotId     String
   shippingQuoteId            String?
   customsQuoteId             String?
   notes                      String?
-  createdAt                  DateTime               @default(now())
-  updatedAt                  DateTime               @updatedAt
-  businessProfileVersion     BusinessProfileVersion @relation(fields: [businessProfileVersionId], references: [id])
-  feeProfile                 FeeProfile             @relation(fields: [feeProfileId], references: [id])
-  exchangeRateSnapshot       ExchangeRateSnapshot   @relation(fields: [exchangeRateSnapshotId], references: [id])
-  shippingQuote              ShippingQuote?         @relation(fields: [shippingQuoteId], references: [id])
-  customsQuote               CustomsQuote?          @relation(fields: [customsQuoteId], references: [id])
+  createdAt                  DateTime                @default(now())
+  updatedAt                  DateTime                @updatedAt
+  businessProfileVersion     BusinessProfileVersion  @relation(fields: [businessProfileVersionId], references: [id])
+  feeProfile                 FeeProfile              @relation(fields: [feeProfileId], references: [id])
+  exchangeRateSnapshot       ExchangeRateSnapshot    @relation(fields: [exchangeRateSnapshotId], references: [id])
+  shippingQuote              ShippingQuote?          @relation(fields: [shippingQuoteId], references: [id])
+  customsQuote               CustomsQuote?           @relation(fields: [customsQuoteId], references: [id])
   items                      OrderItem[]
   snapshots                  OrderCostSnapshot[]
+  legalOperatingProfileId    String?
+  confirmedAt                DateTime?
+  complianceComplete         Boolean                 @default(false)
+  etsyReceiptId              String?                 @unique
+  legalOperatingProfile      LegalOperatingProfile?  @relation(fields: [legalOperatingProfileId], references: [id])
+  documents                  StoredDocument[]
+  checklist                  OrderDocumentChecklist?
+  adjustments                OrderAdjustment[]
+  withholdingRecords         WithholdingRecord[]
 
   @@index([orderDate])
   @@index([destinationCountry])
@@ -299,6 +333,7 @@ model OrderCostSnapshot {
   feeProfile               FeeProfile             @relation(fields: [feeProfileId], references: [id])
   exchangeRateSnapshot     ExchangeRateSnapshot   @relation(fields: [exchangeRateSnapshotId], references: [id])
   lines                    OrderCostLine[]
+  adjustments              OrderAdjustment[]
 
   @@index([orderId, calculatedAt])
 }
@@ -731,4 +766,453 @@ model EtsyImportMapping {
   updatedAt           DateTime @updatedAt
 
   @@unique([originalType, originalDescription])
+}
+
+enum OperatingMode {
+  ARTISAN_TAX_EXEMPTION
+  SOLE_PROPRIETORSHIP
+  LIMITED_COMPANY
+  PLANNING_ONLY
+}
+
+enum LegalSellerType {
+  TAX_EXEMPT_ARTISAN
+  INDIVIDUAL
+  SOLE_PROPRIETORSHIP
+  COMPANY
+}
+
+enum OrphanPensionRiskStatus {
+  UNKNOWN
+  UNDER_REVIEW
+  CONFIRMED_NO_IMPACT
+  CONFIRMED_IMPACT
+  MANUAL_REVIEW_REQUIRED
+}
+
+enum ComplianceCaseStatus {
+  DRAFT
+  SUBMITTED
+  WAITING_FOR_RESPONSE
+  RESPONSE_RECEIVED
+  NEEDS_CLARIFICATION
+  RESOLVED
+  ARCHIVED
+}
+
+enum ComplianceInstitution {
+  SGK
+  GIB
+  TAX_OFFICE
+  ETSY
+  SHIPENTEGRA
+  BANK
+  ACCOUNTANT
+  OTHER
+}
+
+enum DocumentCategory {
+  ETSY_ORDER
+  ETSY_PAYMENT
+  ETSY_LEDGER
+  PRODUCT_PHOTO
+  PACKAGE_PHOTO
+  SALES_DOCUMENT
+  PROFORMA
+  SHIPENTEGRA_LABEL
+  SHIPENTEGRA_INVOICE
+  ETGB
+  CUSTOMS_CALCULATION
+  DDP_CALCULATION
+  TRACKING_DOCUMENT
+  BANK_PAYOUT
+  BANK_WITHHOLDING
+  MATERIAL_RECEIPT
+  PACKAGING_RECEIPT
+  RETURN_DOCUMENT
+  CUSTOMER_CORRESPONDENCE
+  TAX_EXEMPTION_CERTIFICATE
+  SGK_RESPONSE
+  TAX_OFFICE_RESPONSE
+  ETSY_SUPPORT_RESPONSE
+  SHIPENTEGRA_RESPONSE
+  ACCOUNTANT_OPINION
+  OTHER
+}
+
+enum DocumentStatus {
+  UPLOADED
+  PENDING_REVIEW
+  VERIFIED
+  REJECTED
+  EXPIRED
+  ARCHIVED
+}
+
+enum ConfidentialityLevel {
+  INTERNAL
+  SENSITIVE
+  HIGHLY_SENSITIVE
+}
+
+enum WithholdingBaseType {
+  BANK_NET_PAYOUT
+  ETSY_GROSS_REVENUE
+  MANUAL
+  UNKNOWN_PENDING_CONFIRMATION
+}
+
+enum PeriodType {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  CUSTOM
+}
+
+enum ProfitMetric {
+  MARKETPLACE_CONTRIBUTION
+  PRODUCT_CONTRIBUTION
+  AFTER_LABOR
+  OPERATING_PROFIT
+  REALISTIC_AFTER_TAX_AND_RESERVES
+}
+
+enum PlanningMode {
+  AVERAGE_PRODUCT
+  PRODUCT_COMBINATION
+  CURRENT_INVENTORY
+  CUSTOM_MIX
+}
+
+model LegalOperatingProfile {
+  id                                   String                  @id @default(cuid())
+  name                                 String
+  effectiveFrom                        DateTime
+  effectiveTo                          DateTime?
+  operatingMode                        OperatingMode
+  legalSellerName                      String
+  legalSellerType                      LegalSellerType
+  makerName                            String
+  etsyAccountHolderName                String
+  etsyTaxpayerName                     String
+  bankAccountHolderName                String
+  exporterName                         String
+  shipEntegraAccountHolderName         String
+  businessStatus                       String
+  artisanTaxExemptionEnabled           Boolean                 @default(false)
+  artisanTaxExemptionCertificateNumber String?
+  artisanTaxExemptionCertificateDate   DateTime?
+  artisanTaxExemptionExpiryDate        DateTime?
+  orphanPensionRiskStatus              OrphanPensionRiskStatus @default(UNKNOWN)
+  sgkWrittenConfirmationStatus         String                  @default("UNKNOWN")
+  sgkWrittenConfirmationDate           DateTime?
+  vatIdSubmittedToEtsy                 Boolean                 @default(false)
+  sellerFeeVatTreatment                String
+  incomeTaxReserveRate                 Decimal                 @default(0)
+  withholdingTaxRate                   Decimal                 @default(0)
+  expectedMonthlyOrders                Int                     @default(1)
+  fourAEmploymentActive                Boolean                 @default(false)
+  companyStartDate                     DateTime?
+  notes                                String?
+  createdAt                            DateTime                @default(now())
+  updatedAt                            DateTime                @updatedAt
+  orders                               Order[]
+  documents                            StoredDocument[]
+  complianceCases                      ComplianceCase[]
+  goals                                ProfitGoal[]
+  withholdingRecords                   WithholdingRecord[]
+
+  @@unique([name, effectiveFrom])
+  @@index([effectiveFrom, effectiveTo])
+  @@index([operatingMode, effectiveFrom])
+}
+
+model TaxExemptionLimitVersion {
+  id             String   @id @default(cuid())
+  year           Int
+  annualLimitTry Decimal
+  effectiveFrom  DateTime
+  source         String
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([year, effectiveFrom])
+}
+
+model ComplianceCase {
+  id                             String                 @id @default(cuid())
+  title                          String
+  institution                    ComplianceInstitution
+  topic                          String
+  status                         ComplianceCaseStatus   @default(DRAFT)
+  openedAt                       DateTime               @default(now())
+  submittedAt                    DateTime?
+  responseDueAt                  DateTime?
+  resolvedAt                     DateTime?
+  summary                        String?
+  decision                       String?
+  referenceNumber                String?
+  contactChannel                 String?
+  relatedLegalOperatingProfileId String?
+  createdAt                      DateTime               @default(now())
+  updatedAt                      DateTime               @updatedAt
+  relatedLegalOperatingProfile   LegalOperatingProfile? @relation(fields: [relatedLegalOperatingProfileId], references: [id])
+  documents                      StoredDocument[]
+
+  @@index([status, responseDueAt])
+  @@index([institution, topic])
+}
+
+model StoredDocument {
+  id                      String                       @id @default(cuid())
+  originalFilename        String
+  safeStorageFilename     String
+  blobUrl                 String
+  blobPath                String                       @unique
+  mimeType                String
+  sizeBytes               Int
+  checksumSha256          String
+  category                DocumentCategory
+  status                  DocumentStatus               @default(PENDING_REVIEW)
+  confidentialityLevel    ConfidentialityLevel         @default(SENSITIVE)
+  orderId                 String?
+  productId               String?
+  etsyReceiptId           String?
+  shippingQuoteId         String?
+  customsQuoteId          String?
+  legalOperatingProfileId String?
+  complianceCaseId        String?
+  documentDate            DateTime?
+  uploadedAt              DateTime                     @default(now())
+  uploadedBy              String
+  verifiedAt              DateTime?
+  verifiedBy              String?
+  expiresAt               DateTime?
+  archivedAt              DateTime?
+  deletedAt               DateTime?
+  notes                   String?
+  createdAt               DateTime                     @default(now())
+  updatedAt               DateTime                     @updatedAt
+  order                   Order?                       @relation(fields: [orderId], references: [id])
+  product                 Product?                     @relation(fields: [productId], references: [id])
+  shippingQuote           ShippingQuote?               @relation(fields: [shippingQuoteId], references: [id])
+  customsQuote            CustomsQuote?                @relation(fields: [customsQuoteId], references: [id])
+  legalOperatingProfile   LegalOperatingProfile?       @relation(fields: [legalOperatingProfileId], references: [id])
+  complianceCase          ComplianceCase?              @relation(fields: [complianceCaseId], references: [id])
+  checklistItems          OrderDocumentChecklistItem[]
+
+  @@index([checksumSha256, deletedAt])
+  @@index([orderId, category, status])
+  @@index([complianceCaseId])
+}
+
+model DocumentRequirementRule {
+  id                    String           @id @default(cuid())
+  name                  String
+  category              DocumentCategory
+  destinationCountry    String?
+  operatingMode         OperatingMode?
+  incoterm              String?
+  carrier               String?
+  returnedOnly          Boolean?
+  artisanExemptionOnly  Boolean?
+  confirmedSnapshotOnly Boolean?
+  required              Boolean          @default(true)
+  effectiveFrom         DateTime
+  effectiveTo           DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@index([effectiveFrom, effectiveTo, category])
+}
+
+model OrderDocumentChecklist {
+  id                  String                       @id @default(cuid())
+  orderId             String                       @unique
+  completenessPercent Decimal                      @default(0)
+  complianceComplete  Boolean                      @default(false)
+  generatedAt         DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+  order               Order                        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  items               OrderDocumentChecklistItem[]
+}
+
+model OrderDocumentChecklistItem {
+  id          String                 @id @default(cuid())
+  checklistId String
+  category    DocumentCategory
+  required    Boolean                @default(true)
+  documentId  String?
+  verified    Boolean                @default(false)
+  notes       String?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  checklist   OrderDocumentChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  document    StoredDocument?        @relation(fields: [documentId], references: [id])
+
+  @@unique([checklistId, category])
+}
+
+model ProductMaterialCost {
+  id                   String              @id @default(cuid())
+  productId            String
+  productCostVersionId String?
+  componentType        String
+  description          String?
+  quantity             Decimal             @default(1)
+  unitCostTry          Decimal
+  totalCostTry         Decimal
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  product              Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productCostVersion   ProductCostVersion? @relation(fields: [productCostVersionId], references: [id], onDelete: Cascade)
+
+  @@index([productId, componentType])
+  @@index([productCostVersionId])
+}
+
+model OrderAdjustment {
+  id           String             @id @default(cuid())
+  orderId      String
+  snapshotId   String?
+  category     String
+  amount       Decimal
+  currency     String
+  amountUsd    Decimal
+  amountTry    Decimal
+  reason       String
+  evidenceNote String?
+  createdBy    String
+  createdAt    DateTime           @default(now())
+  order        Order              @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  snapshot     OrderCostSnapshot? @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+
+  @@index([orderId, createdAt])
+}
+
+model WithholdingRecord {
+  id                      String                 @id @default(cuid())
+  orderId                 String?
+  legalOperatingProfileId String?
+  recordDate              DateTime
+  expectedWithholdingRate Decimal                @default(0)
+  expectedWithholdingTry  Decimal                @default(0)
+  actualWithholdingTry    Decimal?
+  withholdingBaseType     WithholdingBaseType    @default(UNKNOWN_PENDING_CONFIRMATION)
+  withholdingBaseTry      Decimal?
+  bankReference           String?
+  verificationStatus      String                 @default("PENDING")
+  notes                   String?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  order                   Order?                 @relation(fields: [orderId], references: [id])
+  legalOperatingProfile   LegalOperatingProfile? @relation(fields: [legalOperatingProfileId], references: [id])
+
+  @@index([recordDate, verificationStatus])
+}
+
+model ProfitGoal {
+  id                   String                @id @default(cuid())
+  name                 String
+  periodType           PeriodType
+  startDate            DateTime
+  endDate              DateTime
+  targetProfitAmount   Decimal
+  targetProfitCurrency String
+  profitMetric         ProfitMetric          @default(REALISTIC_AFTER_TAX_AND_RESERVES)
+  planningMode         PlanningMode
+  operatingProfileId   String
+  scenarioSettings     Json
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  operatingProfile     LegalOperatingProfile @relation(fields: [operatingProfileId], references: [id])
+  versions             ProfitGoalVersion[]
+  scenarios            GoalScenario[]
+
+  @@index([startDate, endDate])
+}
+
+model ProfitGoalVersion {
+  id                     String                @id @default(cuid())
+  profitGoalId           String
+  versionNumber          Int
+  targetProfitAmount     Decimal
+  targetProfitCurrency   String
+  exchangeRateSnapshotId String?
+  feeProfileId           String?
+  assumptionsJson        Json
+  calculatedAt           DateTime              @default(now())
+  profitGoal             ProfitGoal            @relation(fields: [profitGoalId], references: [id], onDelete: Cascade)
+  exchangeRateSnapshot   ExchangeRateSnapshot? @relation(fields: [exchangeRateSnapshotId], references: [id])
+  feeProfile             FeeProfile?           @relation(fields: [feeProfileId], references: [id])
+  scenarios              GoalScenario[]
+
+  @@unique([profitGoalId, versionNumber])
+}
+
+model GoalScenario {
+  id                  String                @id @default(cuid())
+  profitGoalId        String
+  profitGoalVersionId String?
+  name                String
+  planningMode        PlanningMode
+  objective           String
+  settingsJson        Json
+  exactResult         Boolean               @default(true)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  profitGoal          ProfitGoal            @relation(fields: [profitGoalId], references: [id], onDelete: Cascade)
+  profitGoalVersion   ProfitGoalVersion?    @relation(fields: [profitGoalVersionId], references: [id])
+  products            GoalScenarioProduct[]
+  result              GoalScenarioResult?
+
+  @@index([profitGoalId, createdAt])
+}
+
+model GoalScenarioProduct {
+  id             String       @id @default(cuid())
+  goalScenarioId String
+  productId      String
+  quantity       Int
+  minQuantity    Int          @default(0)
+  maxQuantity    Int?
+  unitProfitUsd  Decimal
+  laborHours     Decimal
+  scenario       GoalScenario @relation(fields: [goalScenarioId], references: [id], onDelete: Cascade)
+  product        Product      @relation(fields: [productId], references: [id])
+
+  @@unique([goalScenarioId, productId])
+}
+
+model GoalScenarioResult {
+  id                       String       @id @default(cuid())
+  goalScenarioId           String       @unique
+  estimatedProfitUsd       Decimal
+  estimatedProfitTry       Decimal
+  requiredUnits            Int?
+  requiredRevenueUsd       Decimal
+  totalLaborHours          Decimal
+  totalFeesUsd             Decimal
+  totalLogisticsUsd        Decimal
+  totalMaterialsTry        Decimal
+  targetAchievementPercent Decimal
+  warningsJson             Json
+  calculationSnapshotJson  Json
+  createdAt                DateTime     @default(now())
+  scenario                 GoalScenario @relation(fields: [goalScenarioId], references: [id], onDelete: Cascade)
+}
+
+model MonthlyActualSummary {
+  id                       String   @id @default(cuid())
+  month                    DateTime
+  currency                 String
+  confirmedRevenue         Decimal
+  confirmedRealisticProfit Decimal
+  openOrderExpectedProfit  Decimal
+  actualWithholding        Decimal
+  snapshotJson             Json
+  createdAt                DateTime @default(now())
+
+  @@unique([month, currency])
 }

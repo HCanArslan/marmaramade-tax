@@ -22,6 +22,8 @@ Add these to the **Production** environment in Vercel Project Settings:
 - `AUTH_MAX_FAILED_ATTEMPTS=5`
 - `AUTH_LOCKOUT_MINUTES=15`
 - `AUTH_SESSION_MAX_AGE_HOURS=8`
+- `BLOB_READ_WRITE_TOKEN` (from a private Vercel Blob store)
+- `DOCUMENT_MAX_SIZE_MB=25`
 
 When using Neon, leave its automatically managed database variables unchanged. Do not create a duplicate `DATABASE_URL` or copy a pooled URL into `DIRECT_URL`. For a non-Neon provider, add `DIRECT_URL` using that provider's direct connection string.
 
@@ -63,7 +65,7 @@ The standard settings are sufficient:
 - Build command: `npm run build`
 - Output: detected automatically by Next.js
 
-Prisma Client is generated during installation and again before the build. Database migrations are deliberately not run inside every Vercel build, avoiding concurrent preview deployments modifying production schema.
+Prisma Client is generated during installation and again before the build. The build script runs `prisma migrate deploy` only when `VERCEL_ENV=production`; preview and local builds never migrate the production schema. This supports Vercel integrations whose database credentials are intentionally non-downloadable.
 
 ## 5. Post-deployment checks
 
@@ -75,3 +77,7 @@ Prisma Client is generated during installation and again before the build. Datab
 6. Run `npm audit`, `npm test`, and `npm run guard:etsy-readonly` in CI for each release.
 
 Preview deployments should use a separate preview database or branch when they execute database writes. Do not point untrusted pull-request previews at the production database.
+
+## Compliance migration and rollback note
+
+Apply `20260716110000_complete_ledger_compliance_goals` with `npm run db:deploy`. It is additive: existing required columns are unchanged and the new legal-profile link on orders is nullable for safe backfill. A rollback should first export the new compliance/document/goal metadata, stop application writes, remove the added foreign keys and tables in reverse dependency order, then remove the added columns and enums. Blob objects are not deleted by a database rollback; retain or remove them through the authenticated archive workflow.
