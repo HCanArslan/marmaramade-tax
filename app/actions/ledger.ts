@@ -21,6 +21,7 @@ import { defaultCalculatorInput } from "@/lib/domain/defaults";
 import { calculateProductCost } from "@/lib/domain/product-cost";
 import { optimizeProductMix } from "@/lib/goals/planner";
 import Decimal from "decimal.js";
+import type { Prisma } from "@/generated/prisma/client";
 
 const text = z.string().trim().min(1);
 const optionalText = z
@@ -1058,7 +1059,6 @@ export async function createProductMaterialAction(formData: FormData) {
   const actor = await adminActor("/products");
   const v = z
     .object({
-      productId: text,
       productCostVersionId: text,
       componentType: text,
       description: optionalText,
@@ -1069,20 +1069,116 @@ export async function createProductMaterialAction(formData: FormData) {
   const version = await prisma.productCostVersion.findUniqueOrThrow({
     where: { id: v.productCostVersionId },
   });
-  if (version.productId !== v.productId)
-    throw new Error("Cost version does not belong to the selected product.");
-  const row = await prisma.productMaterialCost.create({
-    data: { ...v, totalCostTry: v.quantity * v.unitCostTry },
+  await prisma.$transaction(async (tx) => {
+    const row = await tx.productMaterialCost.create({
+      data: {
+        ...v,
+        productId: version.productId,
+        totalCostTry: v.quantity * v.unitCostTry,
+      },
+    });
+    await syncMaterialComponentTotal(tx, v.productCostVersionId);
+    await tx.auditLog.create({
+      data: {
+        entityType: "ProductMaterialCost",
+        entityId: row.id,
+        action: "CREATED",
+        actor,
+      },
+    });
   });
-  await prisma.auditLog.create({
-    data: {
-      entityType: "ProductMaterialCost",
-      entityId: row.id,
-      action: "CREATED",
-      actor,
-    },
+  revalidateProductCosts();
+}
+
+export async function deleteProductMaterialAction(formData: FormData) {
+  const actor = await adminActor("/products");
+  const id = text.parse(formData.get("id"));
+  await prisma.$transaction(async (tx) => {
+    const component = await tx.productMaterialCost.findUniqueOrThrow({
+      where: { id },
+    });
+    await tx.productMaterialCost.delete({ where: { id } });
+    if (component.productCostVersionId) {
+      await syncMaterialComponentTotal(tx, component.productCostVersionId);
+    }
+    await tx.auditLog.create({
+      data: {
+        entityType: "ProductMaterialCost",
+        entityId: id,
+        action: "DELETED",
+        actor,
+        beforeJson: JSON.stringify(component),
+      },
+    });
   });
+  revalidateProductCosts();
+}
+
+export async function copyProductMaterialAction(formData: FormData) {
+  const actor = await adminActor("/products");
+  const v = z
+    .object({
+      sourceId: text,
+      targetProductCostVersionId: text,
+    })
+    .parse(Object.fromEntries(formData));
+  await prisma.$transaction(async (tx) => {
+    const [source, target] = await Promise.all([
+      tx.productMaterialCost.findUniqueOrThrow({ where: { id: v.sourceId } }),
+      tx.productCostVersion.findUniqueOrThrow({
+        where: { id: v.targetProductCostVersionId },
+      }),
+    ]);
+    if (source.productId === target.productId) {
+      throw new Error("Choose a cost version belonging to another product.");
+    }
+    const copied = await tx.productMaterialCost.create({
+      data: {
+        productId: target.productId,
+        productCostVersionId: target.id,
+        componentType: source.componentType,
+        description: source.description,
+        quantity: source.quantity,
+        unitCostTry: source.unitCostTry,
+        totalCostTry: source.totalCostTry,
+      },
+    });
+    await syncMaterialComponentTotal(tx, target.id);
+    await tx.auditLog.create({
+      data: {
+        entityType: "ProductMaterialCost",
+        entityId: copied.id,
+        action: "COPIED_TO_PRODUCT",
+        actor,
+        afterJson: JSON.stringify({
+          sourceId: source.id,
+          targetProductId: target.productId,
+          targetProductCostVersionId: target.id,
+        }),
+      },
+    });
+  });
+  revalidateProductCosts();
+}
+
+async function syncMaterialComponentTotal(
+  tx: Prisma.TransactionClient,
+  productCostVersionId: string,
+) {
+  const aggregate = await tx.productMaterialCost.aggregate({
+    where: { productCostVersionId },
+    _sum: { totalCostTry: true },
+  });
+  await tx.productCostVersion.update({
+    where: { id: productCostVersionId },
+    data: { materialCostTry: aggregate._sum.totalCostTry ?? 0 },
+  });
+}
+
+function revalidateProductCosts() {
   revalidatePath("/products");
+  revalidatePath("/calculator");
+  revalidatePath("/inventory");
 }
 
 export async function createManualOrderAction(formData: FormData) {

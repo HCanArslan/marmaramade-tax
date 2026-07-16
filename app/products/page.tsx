@@ -4,17 +4,21 @@ import {
   AlertTriangle,
   Boxes,
   CircleDollarSign,
+  Copy,
   ExternalLink,
   PackageSearch,
   RefreshCw,
   Ruler,
   Tag,
+  Trash2,
 } from "lucide-react";
 import { syncEtsyAction } from "@/app/actions/etsy";
 import { setListingDiscountAction } from "@/app/actions/listings";
 import {
   createProductCostAction,
   createProductMaterialAction,
+  copyProductMaterialAction,
+  deleteProductMaterialAction,
 } from "@/app/actions/ledger";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { getActiveConnection } from "@/lib/etsy/auth";
@@ -146,7 +150,7 @@ export default async function ProductsPage() {
         </p>
         <form
           action={createProductMaterialAction}
-          className="mt-4 grid gap-3 sm:grid-cols-6"
+          className="mt-4 grid gap-3 sm:grid-cols-5"
         >
           <label className="text-xs text-stone-500">
             Cost version
@@ -158,16 +162,6 @@ export default async function ProductsPage() {
                   </option>
                 )),
               )}
-            </select>
-          </label>
-          <label className="text-xs text-stone-500">
-            Product
-            <select className="field mt-1" name="productId">
-              {allProducts.map((p) => (
-                <option value={p.id} key={p.id}>
-                  {p.sku}
-                </option>
-              ))}
             </select>
           </label>
           <label className="text-xs text-stone-500">
@@ -207,15 +201,114 @@ export default async function ProductsPage() {
             Add component
           </button>
         </form>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {allProducts.flatMap((p) =>
-            p.costVersions.flatMap((c) =>
-              c.materialComponents.map((m) => (
-                <span className="pill" key={m.id}>
-                  {p.sku} · {m.componentType} · ₺{m.totalCostTry.toFixed(2)}
-                </span>
-              )),
+        <div className="mt-5 overflow-x-auto rounded-xl border">
+          <table className="w-full min-w-[980px] text-left text-sm">
+            <thead className="bg-stone-50 text-xs text-stone-500">
+              <tr>
+                <th className="p-3">Product / cost version</th>
+                <th>Component</th>
+                <th>Quantity × unit</th>
+                <th>Total material cost</th>
+                <th>Copy to another product</th>
+                <th>Delete</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allProducts.flatMap((product) =>
+                product.costVersions.flatMap((costVersion) =>
+                  costVersion.materialComponents.map((component) => {
+                    const copyTargets = allProducts.flatMap((targetProduct) =>
+                      targetProduct.id === product.id
+                        ? []
+                        : targetProduct.costVersions.map((targetVersion) => ({
+                            id: targetVersion.id,
+                            label: `${targetProduct.sku} · ${targetVersion.effectiveFrom.toLocaleDateString("en-GB")}`,
+                          })),
+                    );
+                    return (
+                      <tr className="border-t align-top" key={component.id}>
+                        <td className="p-3">
+                          <strong>{product.sku}</strong>
+                          <span className="mt-1 block text-xs text-stone-500">
+                            {costVersion.effectiveFrom.toLocaleDateString(
+                              "en-GB",
+                            )}
+                          </span>
+                        </td>
+                        <td className="py-3">
+                          <strong>{component.componentType}</strong>
+                          <span className="mt-1 block max-w-xs text-xs text-stone-500">
+                            {component.description || "No description"}
+                          </span>
+                        </td>
+                        <td className="py-3">
+                          {component.quantity.toFixed(2)} × ₺
+                          {component.unitCostTry.toFixed(2)}
+                        </td>
+                        <td className="py-3 font-semibold">
+                          ₺{component.totalCostTry.toFixed(2)}
+                        </td>
+                        <td className="py-3 pr-3">
+                          {copyTargets.length ? (
+                            <form
+                              action={copyProductMaterialAction}
+                              className="flex min-w-[300px] gap-2"
+                            >
+                              <input
+                                type="hidden"
+                                name="sourceId"
+                                value={component.id}
+                              />
+                              <select
+                                className="field py-2 text-xs"
+                                name="targetProductCostVersionId"
+                                aria-label={`Copy ${component.componentType} to product`}
+                                required
+                              >
+                                <option value="">Choose destination</option>
+                                {copyTargets.map((target) => (
+                                  <option key={target.id} value={target.id}>
+                                    {target.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <button className="inline-flex items-center gap-1 rounded-lg border bg-white px-3 py-2 text-xs">
+                                <Copy size={13} /> Copy
+                              </button>
+                            </form>
+                          ) : (
+                            <span className="text-xs text-stone-400">
+                              Create a cost version for another product first.
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 pr-3">
+                          <form action={deleteProductMaterialAction}>
+                            <input
+                              type="hidden"
+                              name="id"
+                              value={component.id}
+                            />
+                            <button className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                              <Trash2 size={13} /> Delete
+                            </button>
+                          </form>
+                        </td>
+                      </tr>
+                    );
+                  }),
+                ),
+              )}
+            </tbody>
+          </table>
+          {!allProducts.some((product) =>
+            product.costVersions.some(
+              (costVersion) => costVersion.materialComponents.length > 0,
             ),
+          ) && (
+            <p className="p-6 text-center text-sm text-stone-500">
+              No material components have been added yet.
+            </p>
           )}
         </div>
       </section>

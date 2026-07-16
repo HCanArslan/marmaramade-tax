@@ -106,4 +106,17 @@ describe("planning usability", () => {
     expect(shipping).toContain("Use for planning");
     expect(actions).toContain("setPlanningDefaultShippingQuoteAction");
   });
+
+  it("supports copying and deleting material components while keeping totals synchronized", async () => {
+    const [products, actions] = await Promise.all([
+      source("app/products/page.tsx"),
+      source("app/actions/ledger.ts"),
+    ]);
+    expect(products).toContain("copyProductMaterialAction");
+    expect(products).toContain("deleteProductMaterialAction");
+    expect(products).toContain("Copy to another product");
+    expect(actions).toContain("syncMaterialComponentTotal");
+    expect(actions).toContain('action: "COPIED_TO_PRODUCT"');
+    expect(actions).toContain('action: "DELETED"');
+  });
 });
