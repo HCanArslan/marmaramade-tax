@@ -129,7 +129,35 @@ export function CalculatorWorkspace({
                 additionalDirectCostTry: product.additionalDirectCostTry,
               })
             : null;
-        return { product, quantity, calculation };
+        const missing: string[] = [];
+        const directCostTry = new Decimal(product.materialCostTry)
+          .plus(product.packagingCostTry)
+          .plus(product.additionalDirectCostTry)
+          .plus(
+            new Decimal(product.laborHours).mul(product.laborHourlyRateTry),
+          );
+        if (directCostTry.eq(0)) missing.push("product cost");
+        if (
+          new Decimal(calculationInput.internationalShippingUsd)
+            .plus(calculationInput.shippingInsuranceUsd)
+            .eq(0)
+        )
+          missing.push("shipping / ETGB service");
+        if (
+          new Decimal(calculationInput.customsDutyUsd)
+            .plus(calculationInput.additionalTariffUsd)
+            .plus(calculationInput.carrierProcessingFeeUsd)
+            .plus(calculationInput.brokerageFeeUsd)
+            .plus(calculationInput.customsClearanceFeeUsd)
+            .plus(calculationInput.destinationFeesUsd)
+            .eq(0)
+        )
+          missing.push("customs / destination charges");
+        if (new Decimal(calculationInput.monthlyOverheadTry).eq(0))
+          missing.push("monthly business overhead");
+        if (new Decimal(calculationInput.taxReserveRate).eq(0))
+          missing.push("tax reserve");
+        return { product, quantity, calculation, missing };
       }),
     [calculationInput, planQuantities, products],
   );
@@ -147,6 +175,24 @@ export function CalculatorWorkspace({
             fees: totals.fees.plus(
               row.calculation.totals.totalEtsyFees.mul(quantity),
             ),
+            productCosts: totals.productCosts.plus(
+              row.calculation.totals.directProductCostUsd.mul(quantity),
+            ),
+            shipping: totals.shipping.plus(
+              row.calculation.totals.internationalShippingUsd.mul(quantity),
+            ),
+            customs: totals.customs.plus(
+              row.calculation.totals.customsAndTariffUsd.mul(quantity),
+            ),
+            overhead: totals.overhead.plus(
+              row.calculation.totals.allocatedBusinessOverheadUsd.mul(quantity),
+            ),
+            tax: totals.tax.plus(
+              row.calculation.totals.taxReserve.mul(quantity),
+            ),
+            totalCosts: totals.totalCosts.plus(
+              row.calculation.totals.totalCostUsd.mul(quantity),
+            ),
             profit: totals.profit.plus(
               row.calculation.totals.estimatedAfterReserveProfit.mul(quantity),
             ),
@@ -156,11 +202,30 @@ export function CalculatorWorkspace({
           units: 0,
           revenue: new Decimal(0),
           fees: new Decimal(0),
+          productCosts: new Decimal(0),
+          shipping: new Decimal(0),
+          customs: new Decimal(0),
+          overhead: new Decimal(0),
+          tax: new Decimal(0),
+          totalCosts: new Decimal(0),
           profit: new Decimal(0),
         },
       ),
     [planRows],
   );
+  const selectedPlanRows = planRows.filter((row) => row.quantity > 0);
+  const missingPlanInputs = Array.from(
+    new Set(selectedPlanRows.flatMap((row) => row.missing)),
+  );
+  const planIsComplete =
+    selectedPlanRows.length > 0 && missingPlanInputs.length === 0;
+  const otherPlanCosts = planTotals.totalCosts
+    .minus(planTotals.fees)
+    .minus(planTotals.productCosts)
+    .minus(planTotals.shipping)
+    .minus(planTotals.customs)
+    .minus(planTotals.overhead)
+    .minus(planTotals.tax);
   const useAllAvailable = () =>
     setPlanQuantities(
       Object.fromEntries(
@@ -465,6 +530,24 @@ export function CalculatorWorkspace({
               </div>
             </div>
           </section>
+          {selectedPlanRows.length > 0 && missingPlanInputs.length > 0 && (
+            <section className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-950">
+              <div className="flex gap-3">
+                <AlertTriangle className="mt-0.5 shrink-0" size={18} />
+                <div>
+                  <h3 className="font-semibold">
+                    Profit is preliminary because required costs are zero
+                  </h3>
+                  <p className="mt-1 leading-6">
+                    Missing or zero: {missingPlanInputs.join(", ")}. Enter these
+                    under Quick calculator or save the corresponding product,
+                    shipping, customs, business and tax-planning records. Zero
+                    is never treated as a confirmed free cost.
+                  </p>
+                </div>
+              </div>
+            </section>
+          )}
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <PlanMetric
               label="Planned units"
@@ -479,10 +562,64 @@ export function CalculatorWorkspace({
               value={formatMoney(planTotals.fees, "USD")}
             />
             <PlanMetric
-              label="Estimated profit after saved costs and reserve"
+              label={
+                planIsComplete
+                  ? "Estimated profit after all configured costs"
+                  : "Preliminary remainder — incomplete inputs"
+              }
               value={`${formatMoney(planTotals.profit, "USD")} · ${formatMoney(planTotals.profit.mul(input.usdTryRate), "TRY")}`}
             />
           </section>
+          {selectedPlanRows.length > 0 && (
+            <section className="card overflow-hidden">
+              <div className="border-b p-5">
+                <h3 className="font-semibold">Scenario deduction audit</h3>
+                <p className="mt-1 text-xs text-stone-500">
+                  This shows exactly what was deducted. A $0.00 line is not
+                  configured and is the reason an apparent profit can be too
+                  high.
+                </p>
+              </div>
+              <div className="grid gap-px bg-stone-200 sm:grid-cols-2 xl:grid-cols-4">
+                <Deduction
+                  label="Product + labor"
+                  value={planTotals.productCosts}
+                />
+                <Deduction
+                  label="Shipping / ETGB service"
+                  value={planTotals.shipping}
+                />
+                <Deduction
+                  label="Customs + destination"
+                  value={planTotals.customs}
+                />
+                <Deduction
+                  label="Business overhead"
+                  value={planTotals.overhead}
+                />
+                <Deduction
+                  label="Etsy fees + fee VAT"
+                  value={planTotals.fees}
+                />
+                <Deduction
+                  label="Tax planning reserve"
+                  value={planTotals.tax}
+                />
+                <Deduction
+                  label="Other logistics + reserves"
+                  value={otherPlanCosts}
+                />
+                <Deduction
+                  label="All deductions"
+                  value={planTotals.totalCosts}
+                />
+                <Deduction
+                  label="Preliminary remainder"
+                  value={planTotals.profit}
+                />
+              </div>
+            </section>
+          )}
           <section className="card overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-left text-sm">
@@ -497,65 +634,69 @@ export function CalculatorWorkspace({
                   </tr>
                 </thead>
                 <tbody>
-                  {planRows.map(({ product, quantity, calculation }) => (
-                    <tr className="border-t" key={product.id}>
-                      <td className="px-5 py-4">
-                        <strong className="block">{product.sku}</strong>
-                        <span className="mt-1 block max-w-md text-xs text-stone-500">
-                          {product.listingTitle}
-                        </span>
-                      </td>
-                      <td>
-                        <span
-                          className={`pill ${product.state === "active" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-stone-200 bg-stone-50 text-stone-500"}`}
-                        >
-                          {product.state}
-                        </span>
-                        <span className="ml-2 text-xs text-stone-500">
-                          {product.availableQuantity}
-                        </span>
-                      </td>
-                      <td>
-                        <input
-                          aria-label={`Planned quantity for ${product.sku}`}
-                          className="field w-28"
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={planQuantities[product.id] || ""}
-                          placeholder="0"
-                          onChange={(event) =>
-                            setPlanQuantities((current) => ({
-                              ...current,
-                              [product.id]: event.target.value,
-                            }))
-                          }
-                        />
-                      </td>
-                      <td>
-                        {product.currency}{" "}
-                        {new Decimal(product.discountedPrice).toFixed(2)}
-                      </td>
-                      <td>
-                        {calculation
-                          ? formatMoney(
-                              calculation.totals.estimatedAfterReserveProfit,
-                              "USD",
-                            )
-                          : "USD only"}
-                      </td>
-                      <td className="font-semibold">
-                        {calculation
-                          ? formatMoney(
-                              calculation.totals.estimatedAfterReserveProfit.mul(
-                                quantity,
-                              ),
-                              "USD",
-                            )
-                          : "—"}
-                      </td>
-                    </tr>
-                  ))}
+                  {planRows.map(
+                    ({ product, quantity, calculation, missing }) => (
+                      <tr className="border-t" key={product.id}>
+                        <td className="px-5 py-4">
+                          <strong className="block">{product.sku}</strong>
+                          <span className="mt-1 block max-w-md text-xs text-stone-500">
+                            {product.listingTitle}
+                          </span>
+                        </td>
+                        <td>
+                          <span
+                            className={`pill ${product.state === "active" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-stone-200 bg-stone-50 text-stone-500"}`}
+                          >
+                            {product.state}
+                          </span>
+                          <span className="ml-2 text-xs text-stone-500">
+                            {product.availableQuantity}
+                          </span>
+                        </td>
+                        <td>
+                          <input
+                            aria-label={`Planned quantity for ${product.sku}`}
+                            className="field w-28"
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={planQuantities[product.id] || ""}
+                            placeholder="0"
+                            onChange={(event) =>
+                              setPlanQuantities((current) => ({
+                                ...current,
+                                [product.id]: event.target.value,
+                              }))
+                            }
+                          />
+                        </td>
+                        <td>
+                          {product.currency}{" "}
+                          {new Decimal(product.discountedPrice).toFixed(2)}
+                        </td>
+                        <td>
+                          {calculation
+                            ? `${missing.length ? "Preliminary " : ""}${formatMoney(calculation.totals.estimatedAfterReserveProfit, "USD")}`
+                            : "USD only"}
+                          {quantity > 0 && missing.length > 0 && (
+                            <span className="mt-1 block max-w-48 text-[11px] leading-4 text-red-700">
+                              Missing: {missing.join(", ")}
+                            </span>
+                          )}
+                        </td>
+                        <td className="font-semibold">
+                          {calculation
+                            ? formatMoney(
+                                calculation.totals.estimatedAfterReserveProfit.mul(
+                                  quantity,
+                                ),
+                                "USD",
+                              )
+                            : "—"}
+                        </td>
+                      </tr>
+                    ),
+                  )}
                 </tbody>
               </table>
             </div>
@@ -564,7 +705,9 @@ export function CalculatorWorkspace({
             <AlertTriangle className="mr-1.5 inline" size={14} />
             This is a planning scenario, not a filed tax calculation. Each row
             uses its own saved product cost. Business overhead, tax reserve,
-            shipping, and customs use the current Quick calculator values.
+            shipping, and customs use the current Quick calculator values. ETGB
+            is an export process, not automatically a separate fee; any carrier
+            or declaration charge must be included in the saved shipping quote.
           </div>
         </div>
       )}
@@ -596,6 +739,21 @@ function PlanMetric({ label, value }: { label: string; value: string }) {
     <div className="card p-4">
       <p className="text-xs text-stone-500">{label}</p>
       <p className="mt-2 text-lg font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function Deduction({ label, value }: { label: string; value: Decimal }) {
+  const missing = value.eq(0);
+  return (
+    <div className="bg-white p-5">
+      <p className="text-xs text-stone-500">{label}</p>
+      <p className={`mt-2 font-semibold ${missing ? "text-red-700" : ""}`}>
+        {formatMoney(value, "USD")}
+      </p>
+      {missing && (
+        <p className="mt-1 text-[11px] text-red-600">Not configured</p>
+      )}
     </div>
   );
 }

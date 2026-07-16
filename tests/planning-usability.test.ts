@@ -89,4 +89,21 @@ describe("planning usability", () => {
     expect(inventory).toContain("Etsy sellable quantity");
     expect(inventory).toContain("Recorded finished units");
   });
+
+  it("never presents a zero-input monthly scenario as reliable profit", async () => {
+    const [calculator, shipping, actions] = await Promise.all([
+      source("components/calculator-workspace.tsx"),
+      source("app/shipping/page.tsx"),
+      source("app/actions/ledger.ts"),
+    ]);
+    expect(calculator).toContain(
+      "Profit is preliminary because required costs are zero",
+    );
+    expect(calculator).toContain("Scenario deduction audit");
+    expect(calculator).toContain("Shipping / ETGB service");
+    expect(calculator).toContain("customs / destination charges");
+    expect(calculator).toContain("tax reserve");
+    expect(shipping).toContain("Use for planning");
+    expect(actions).toContain("setPlanningDefaultShippingQuoteAction");
+  });
 });

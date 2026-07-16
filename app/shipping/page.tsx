@@ -2,6 +2,7 @@ import {
   archiveShippingQuoteAction,
   createShippingQuoteAction,
   duplicateShippingQuoteAction,
+  setPlanningDefaultShippingQuoteAction,
 } from "@/app/actions/ledger";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { prisma } from "@/lib/prisma";
@@ -17,6 +18,11 @@ export default async function ShippingPage() {
       <Header />
       <section className="card p-5">
         <h2 className="font-semibold">New effective-dated quote</h2>
+        <p className="mt-1 text-sm text-stone-500">
+          The Calculator uses only the unexpired USD quote marked as Planning
+          default. Include any ShipEntegra or ETGB service charge in the quote
+          total when the carrier charges it.
+        </p>
         <form
           action={createShippingQuoteAction}
           className="mt-4 grid gap-3 md:grid-cols-4"
@@ -89,22 +95,6 @@ export default async function ShippingPage() {
                 <td>
                   {q.originCountry} → {q.destinationCountry}
                 </td>
-                <td>
-                  <div className="flex gap-1">
-                    <form action={duplicateShippingQuoteAction}>
-                      <input type="hidden" name="id" value={q.id} />
-                      <button className="rounded border px-2 py-1 text-xs">
-                        Duplicate
-                      </button>
-                    </form>
-                    <form action={archiveShippingQuoteAction}>
-                      <input type="hidden" name="id" value={q.id} />
-                      <button className="rounded border px-2 py-1 text-xs">
-                        Archive
-                      </button>
-                    </form>
-                  </div>
-                </td>
                 <td>{q.billableWeightKg.toFixed(2)} kg</td>
                 <td>
                   {q.shippingCost.toFixed(2)} {q.shippingCurrency}
@@ -118,9 +108,34 @@ export default async function ShippingPage() {
                     {q.expirationDate && q.expirationDate < new Date()
                       ? "Expired"
                       : q.planningDefault
-                        ? "Default"
-                        : "Current"}
+                        ? "Planning default"
+                        : "Not used by Calculator"}
                   </span>
+                </td>
+                <td>
+                  <div className="flex flex-wrap gap-1">
+                    {!q.planningDefault &&
+                      (!q.expirationDate || q.expirationDate >= new Date()) && (
+                        <form action={setPlanningDefaultShippingQuoteAction}>
+                          <input type="hidden" name="id" value={q.id} />
+                          <button className="rounded border border-jade px-2 py-1 text-xs text-jade">
+                            Use for planning
+                          </button>
+                        </form>
+                      )}
+                    <form action={duplicateShippingQuoteAction}>
+                      <input type="hidden" name="id" value={q.id} />
+                      <button className="rounded border px-2 py-1 text-xs">
+                        Duplicate
+                      </button>
+                    </form>
+                    <form action={archiveShippingQuoteAction}>
+                      <input type="hidden" name="id" value={q.id} />
+                      <button className="rounded border px-2 py-1 text-xs">
+                        Archive
+                      </button>
+                    </form>
+                  </div>
                 </td>
               </tr>
             ))}

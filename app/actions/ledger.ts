@@ -187,6 +187,12 @@ export async function createShippingQuoteAction(formData: FormData) {
       planningDefault: v.planningDefault,
     },
   });
+  if (v.planningDefault) {
+    await prisma.shippingQuote.updateMany({
+      where: { id: { not: quote.id } },
+      data: { planningDefault: false },
+    });
+  }
   await prisma.auditLog.create({
     data: {
       entityType: "ShippingQuote",
@@ -196,6 +202,7 @@ export async function createShippingQuoteAction(formData: FormData) {
     },
   });
   revalidatePath("/shipping");
+  revalidatePath("/calculator");
 }
 
 export async function createCustomsQuoteAction(formData: FormData) {
@@ -312,6 +319,35 @@ export async function archiveShippingQuoteAction(formData: FormData) {
     }),
   ]);
   revalidatePath("/shipping");
+  revalidatePath("/calculator");
+}
+
+export async function setPlanningDefaultShippingQuoteAction(
+  formData: FormData,
+) {
+  const actor = await adminActor("/shipping");
+  const id = text.parse(formData.get("id"));
+  await prisma.$transaction([
+    prisma.shippingQuote.updateMany({
+      where: { planningDefault: true },
+      data: { planningDefault: false },
+    }),
+    prisma.shippingQuote.update({
+      where: { id },
+      data: { planningDefault: true, activeExpected: true },
+    }),
+    prisma.auditLog.create({
+      data: {
+        entityType: "ShippingQuote",
+        entityId: id,
+        action: "SET_PLANNING_DEFAULT",
+        actor,
+      },
+    }),
+  ]);
+  revalidatePath("/shipping");
+  revalidatePath("/calculator");
+  revalidatePath("/");
 }
 export async function duplicateCustomsQuoteAction(formData: FormData) {
   const actor = await adminActor("/customs");
