@@ -2,67 +2,126 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState, type ComponentType } from "react";
 import {
   BarChart3,
   Boxes,
-  Calculator,
-  CircleDollarSign,
-  FileArchive,
-  FileBarChart,
+  ChevronDown,
   Gauge,
   Import,
-  Landmark,
   PackageCheck,
-  Scale,
-  ScrollText,
   Settings,
   ShieldCheck,
   Ship,
-  Target,
   WalletCards,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const links = [
-  ["/", "Dashboard", Gauge],
-  ["/products", "Products", Boxes],
-  ["/materials", "Materials", Boxes],
-  ["/production", "Production", PackageCheck],
-  ["/inventory", "Inventory", Boxes],
-  ["/calculator", "Calculator", Calculator],
-  ["/goals", "Monthly Goals", Target],
-  ["/sales-plan", "Sales Plan", Target],
-  ["/orders", "Orders", PackageCheck],
-  ["/invoices", "Invoices", FileArchive],
-  ["/documents", "Documents", FileArchive],
-  ["/shipping", "Shipping", Ship],
-  ["/shipentegra", "ShipEntegra", Ship],
-  ["/customs", "Customs", Landmark],
-  ["/fees", "Etsy fees", CircleDollarSign],
-  ["/etsy-import", "Etsy import", Import],
-  ["/etsy-payouts", "Etsy payouts", WalletCards],
-  ["/reconciliation", "Reconciliation", Scale],
-  ["/banking", "Banking", WalletCards],
-  ["/expenses", "Expenses", CircleDollarSign],
-  ["/cash-flow", "Cash flow", BarChart3],
-  ["/business", "Business profiles", WalletCards],
-  ["/formation", "Formation", ShieldCheck],
-  ["/compliance", "Compliance", ShieldCheck],
-  ["/customs-etgb", "Customs & ETGB", Landmark],
-  ["/accountant", "Accountant", FileArchive],
-  ["/taxes", "Taxes", Landmark],
-  ["/sgk", "SGK", ShieldCheck],
-  ["/reports", "Reports", FileBarChart],
-  ["/audit-log", "Audit log", ScrollText],
-  ["/settings", "Settings", Settings],
-  ["/tax-exemption", "Tax exemption", Landmark],
-] as const;
+type NavChild = { href: string; label: string };
+type NavGroup = {
+  href: string;
+  label: string;
+  icon: ComponentType<{ size?: number; className?: string }>;
+  children: NavChild[];
+};
+
+const groups: NavGroup[] = [
+  {
+    href: "/inventory",
+    label: "Inventory",
+    icon: Boxes,
+    children: [
+      { href: "/products", label: "Products" },
+      { href: "/materials", label: "Materials" },
+      { href: "/production", label: "Production" },
+    ],
+  },
+  {
+    href: "/orders",
+    label: "Sales & planning",
+    icon: PackageCheck,
+    children: [
+      { href: "/invoices", label: "Invoices" },
+      { href: "/calculator", label: "Calculator" },
+      { href: "/goals", label: "Monthly goals" },
+      { href: "/sales-plan", label: "Sales plan" },
+    ],
+  },
+  {
+    href: "/etsy-import",
+    label: "Etsy",
+    icon: Import,
+    children: [
+      { href: "/fees", label: "Fees" },
+      { href: "/etsy-payouts", label: "Payouts" },
+      { href: "/reconciliation", label: "Reconciliation" },
+    ],
+  },
+  {
+    href: "/shipping",
+    label: "Shipping & export",
+    icon: Ship,
+    children: [
+      { href: "/shipentegra", label: "ShipEntegra" },
+      { href: "/customs", label: "Customs estimates" },
+      { href: "/customs-etgb", label: "Customs & ETGB" },
+      { href: "/documents", label: "Documents" },
+    ],
+  },
+  {
+    href: "/banking",
+    label: "Finance",
+    icon: WalletCards,
+    children: [
+      { href: "/expenses", label: "Expenses" },
+      { href: "/cash-flow", label: "Cash flow" },
+      { href: "/reports", label: "Reports" },
+    ],
+  },
+  {
+    href: "/business",
+    label: "Business",
+    icon: ShieldCheck,
+    children: [
+      { href: "/formation", label: "Formation" },
+      { href: "/tax-exemption", label: "Tax exemption" },
+      { href: "/accountant", label: "Accountant" },
+      { href: "/taxes", label: "Taxes" },
+      { href: "/sgk", label: "SGK" },
+      { href: "/compliance", label: "Compliance" },
+    ],
+  },
+  {
+    href: "/settings",
+    label: "Settings",
+    icon: Settings,
+    children: [
+      { href: "/settings/etsy", label: "Etsy integration" },
+      { href: "/settings/shipentegra", label: "ShipEntegra integration" },
+      { href: "/settings/security", label: "Security" },
+      { href: "/audit-log", label: "Audit log" },
+    ],
+  },
+];
+
+function routeIsActive(pathname: string, href: string) {
+  return pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
+}
+
+function groupIsActive(pathname: string, group: NavGroup) {
+  return (
+    routeIsActive(pathname, group.href) ||
+    group.children.some((child) => routeIsActive(pathname, child.href))
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
   return (
-    <aside className="border-b border-stone-200 bg-[#18342e] text-white lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:border-white/10">
-      <div className="flex items-center justify-between px-5 py-4 lg:block lg:px-6 lg:pb-7 lg:pt-7">
+    <aside className="border-b border-stone-200 bg-[#18342e] text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0 lg:border-r lg:border-white/10">
+      <div className="flex shrink-0 items-center justify-between px-4 py-4 lg:block lg:px-5 lg:pb-3 lg:pt-5">
         <Link href="/" className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#dbe8b6] text-[#18342e]">
             <BarChart3 size={20} />
@@ -76,44 +135,147 @@ export function Sidebar() {
             </span>
           </span>
         </Link>
-        <span className="pill border-white/15 bg-white/5 text-white/70 lg:mt-5">
+        <span className="pill border-white/15 bg-white/5 text-white/70 lg:mt-4">
           ● Local database
         </span>
       </div>
+
       <nav
-        className="flex gap-1 overflow-x-auto px-3 pb-3 lg:block lg:max-h-[calc(100vh-190px)] lg:space-y-1 lg:overflow-y-auto lg:px-3"
+        className="flex gap-1 overflow-x-auto px-3 pb-3 lg:hidden"
         aria-label="Main navigation"
       >
-        {links.map(([href, label, Icon]) => {
-          const active = pathname === href;
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "flex shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition",
-                active
-                  ? "bg-white text-[#18342e] shadow-sm"
-                  : "text-white/65 hover:bg-white/8 hover:text-white",
-              )}
-            >
-              <Icon size={17} />
-              <span>{label}</span>
-            </Link>
-          );
-        })}
+        <MobileLink href="/" label="Dashboard" pathname={pathname} />
+        {groups.map((group) => (
+          <MobileLink
+            href={group.href}
+            label={group.label}
+            pathname={pathname}
+            key={group.label}
+          />
+        ))}
       </nav>
-      <div className="mx-6 mt-auto hidden border-t border-white/10 pt-5 text-xs leading-5 text-white/45 lg:block lg:absolute lg:bottom-6 lg:left-0 lg:right-0">
-        Active legal structure:
-        <br />
-        <span className="text-white/75">
-          Hamit Can Arslan — Sole Proprietorship
-        </span>
-        <br />
-        Türkiye → worldwide
-        <br />
-        USD revenue · TRY costs
+
+      <nav
+        className="hidden min-h-0 flex-1 overflow-y-auto px-3 pb-3 lg:block"
+        aria-label="Main navigation"
+      >
+        <Link
+          href="/"
+          className={cn(
+            "mb-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition",
+            pathname === "/"
+              ? "bg-white text-[#18342e] shadow-sm"
+              : "text-white/70 hover:bg-white/8 hover:text-white",
+          )}
+        >
+          <Gauge size={17} />
+          <span>Dashboard</span>
+        </Link>
+        <div className="space-y-1">
+          {groups.map((group) => {
+            const active = groupIsActive(pathname, group);
+            const open = expanded[group.label] ?? active;
+            const Icon = group.icon;
+            return (
+              <section key={group.label}>
+                <div
+                  className={cn(
+                    "flex items-center rounded-xl transition",
+                    active
+                      ? "bg-white/10 text-white"
+                      : "text-white/70 hover:bg-white/8 hover:text-white",
+                  )}
+                >
+                  <Link
+                    href={group.href}
+                    className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-sm font-medium"
+                  >
+                    <Icon size={17} className="shrink-0" />
+                    <span className="truncate">{group.label}</span>
+                  </Link>
+                  <button
+                    type="button"
+                    className="mr-1 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white/55 hover:bg-white/10 hover:text-white"
+                    aria-label={`${open ? "Collapse" : "Expand"} ${group.label}`}
+                    aria-expanded={open}
+                    onClick={() =>
+                      setExpanded((current) => ({
+                        ...current,
+                        [group.label]: !open,
+                      }))
+                    }
+                  >
+                    <ChevronDown
+                      size={15}
+                      className={cn(
+                        "transition-transform",
+                        open && "rotate-180",
+                      )}
+                    />
+                  </button>
+                </div>
+                {open && (
+                  <div className="ml-5 mt-1 space-y-0.5 border-l border-white/10 pl-3">
+                    {group.children.map((child) => {
+                      const childActive = routeIsActive(pathname, child.href);
+                      return (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          className={cn(
+                            "flex items-center gap-2 rounded-lg px-3 py-2 text-[13px] transition",
+                            childActive
+                              ? "bg-white text-[#18342e]"
+                              : "text-white/55 hover:bg-white/8 hover:text-white",
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "h-1.5 w-1.5 rounded-full",
+                              childActive ? "bg-[#176b5b]" : "bg-white/25",
+                            )}
+                          />
+                          <span>{child.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      </nav>
+
+      <div className="mx-4 mb-4 hidden shrink-0 rounded-xl border border-white/10 bg-black/10 p-3 text-[11px] leading-4 text-white/45 lg:block">
+        <p className="text-white/70">Hamit Can Arslan · Sole Proprietorship</p>
+        <p>Türkiye → worldwide · USD revenue / TRY costs</p>
       </div>
     </aside>
+  );
+}
+
+function MobileLink({
+  href,
+  label,
+  pathname,
+}: {
+  href: string;
+  label: string;
+  pathname: string;
+}) {
+  const active = routeIsActive(pathname, href);
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "shrink-0 rounded-xl px-3 py-2 text-sm transition",
+        active
+          ? "bg-white text-[#18342e]"
+          : "bg-white/5 text-white/70 hover:bg-white/10 hover:text-white",
+      )}
+    >
+      {label}
+    </Link>
   );
 }
