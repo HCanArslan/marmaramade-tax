@@ -138,4 +138,25 @@ describe("planning usability", () => {
     expect(calculatorPage).toContain("materialWithWastage");
     expect(calculatorPage).toContain("additionalMakerPaymentTry");
   });
+
+  it("shows saved product cost values under each product with safe edit and delete controls", async () => {
+    const [products, actions] = await Promise.all([
+      source("app/products/page.tsx"),
+      source("app/actions/ledger.ts"),
+    ]);
+    expect(products).toContain("Saved cost versions by product");
+    expect(products).toContain("Every saved value appears here");
+    expect(products).toContain("View / edit costs");
+    expect(products).toContain("Direct planning cost");
+    expect(products).toContain("Save changes");
+    expect(products).toContain("Delete version");
+    expect(products).toContain("Save component changes");
+    expect(products).toContain("Order locked");
+    expect(actions).toContain("updateProductCostAction");
+    expect(actions).toContain("deleteProductCostAction");
+    expect(actions).toContain("updateProductMaterialAction");
+    expect(actions).toContain("used by an order and cannot be edited");
+    expect(actions).toContain("used by an order and cannot be deleted");
+    expect(actions).toContain('action: "UPDATED"');
+  });
 });

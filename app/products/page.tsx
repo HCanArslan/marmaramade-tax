@@ -18,8 +18,11 @@ import {
   createProductCostAction,
   createProductMaterialAction,
   copyProductMaterialAction,
+  deleteProductCostAction,
   deleteProductMaterialAction,
   duplicateProductCostSetupAction,
+  updateProductCostAction,
+  updateProductMaterialAction,
 } from "@/app/actions/ledger";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { getActiveConnection } from "@/lib/etsy/auth";
@@ -34,7 +37,10 @@ export default async function ProductsPage() {
     include: {
       costVersions: {
         orderBy: { effectiveFrom: "desc" },
-        include: { materialComponents: true },
+        include: {
+          materialComponents: true,
+          _count: { select: { orderItems: true } },
+        },
       },
     },
     orderBy: { sku: "asc" },
@@ -67,6 +73,9 @@ export default async function ProductsPage() {
   const withDimensions = listings.filter(
     (listing) => listing.itemLength && listing.itemWidth && listing.itemHeight,
   ).length;
+  const hasEditableCostVersions = allProducts.some((product) =>
+    product.costVersions.some((version) => version._count.orderItems === 0),
+  );
 
   return (
     <div className="mx-auto max-w-[1450px] space-y-6">
@@ -121,6 +130,7 @@ export default async function ProductsPage() {
             ["allocatedEquipmentCostTry", "Equipment TRY", "number", "0"],
             ["templateType", "Template", "text", "cotton crochet"],
             ["changeReason", "Change reason", "text", "Initial cost"],
+            ["notes", "Notes", "text", ""],
           ].map(([name, label, type, value]) => (
             <label className="text-xs text-stone-500" key={name}>
               {label}
@@ -129,7 +139,9 @@ export default async function ProductsPage() {
                 name={name}
                 type={type}
                 defaultValue={value}
-                required={!["templateType", "changeReason"].includes(name)}
+                required={
+                  !["templateType", "changeReason", "notes"].includes(name)
+                }
                 step={type === "number" ? "0.01" : undefined}
               />
             </label>
@@ -141,6 +153,232 @@ export default async function ProductsPage() {
             Save cost version
           </button>
         </form>
+      </section>
+
+      <section className="card p-5" id="saved-cost-versions">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Saved cost versions by product</h2>
+            <p className="mt-1 max-w-3xl text-sm text-stone-500">
+              Every saved value appears here under its related product. The
+              Calculator uses the newest effective version. Versions already
+              used by an order are locked so historical records stay intact.
+            </p>
+          </div>
+          <span className="pill">
+            {allProducts.reduce(
+              (total, product) => total + product.costVersions.length,
+              0,
+            )}{" "}
+            saved versions
+          </span>
+        </div>
+        <div className="mt-5 grid gap-4 xl:grid-cols-2">
+          {allProducts.map((product) => (
+            <article
+              className="rounded-2xl border bg-stone-50/60 p-4"
+              key={product.id}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold">{product.sku}</p>
+                  <p className="mt-1 line-clamp-2 text-xs text-stone-500">
+                    {product.title}
+                  </p>
+                </div>
+                <span className="pill">
+                  {product.costVersions.length} version
+                  {product.costVersions.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <div className="mt-4 space-y-3">
+                {product.costVersions.map((costVersion, versionIndex) => {
+                  const locked = costVersion._count.orderItems > 0;
+                  const laborTotal = costVersion.laborHours.mul(
+                    costVersion.laborHourlyRateTry,
+                  );
+                  const materialWithWastage = costVersion.materialCostTry.plus(
+                    costVersion.materialCostTry
+                      .mul(costVersion.wastageRate)
+                      .div(100),
+                  );
+                  const directTotal = materialWithWastage
+                    .plus(laborTotal)
+                    .plus(costVersion.packagingCostTry)
+                    .plus(costVersion.additionalDirectCostTry)
+                    .plus(costVersion.additionalMakerPaymentTry)
+                    .plus(costVersion.allocatedEquipmentCostTry);
+                  return (
+                    <div
+                      className="rounded-xl border bg-white p-4"
+                      id={`cost-version-${costVersion.id}`}
+                      key={costVersion.id}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <strong className="text-sm">
+                              {costVersion.effectiveFrom.toLocaleDateString(
+                                "en-GB",
+                              )}
+                            </strong>
+                            <span className="pill">
+                              {versionIndex === 0
+                                ? "Latest · used by Calculator"
+                                : "Historical"}
+                            </span>
+                            {locked && (
+                              <span className="pill">Order locked</span>
+                            )}
+                          </div>
+                          <p className="mt-2 text-xs text-stone-500">
+                            Direct planning cost:{" "}
+                            <strong>₺{directTotal.toFixed(2)}</strong>
+                            {costVersion.materialComponents.length > 0 && (
+                              <>
+                                {" "}
+                                · {costVersion.materialComponents.length}{" "}
+                                itemized material component
+                                {costVersion.materialComponents.length === 1
+                                  ? ""
+                                  : "s"}
+                              </>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      <form
+                        action={updateProductCostAction}
+                        className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                      >
+                        <input type="hidden" name="id" value={costVersion.id} />
+                        <CostInput
+                          label="Effective from"
+                          name="effectiveFrom"
+                          type="date"
+                          value={costVersion.effectiveFrom
+                            .toISOString()
+                            .slice(0, 10)}
+                          locked={locked}
+                        />
+                        <CostInput
+                          label={
+                            costVersion.materialComponents.length
+                              ? "Materials TRY · itemized total"
+                              : "Materials TRY"
+                          }
+                          name="materialCostTry"
+                          value={costVersion.materialCostTry.toString()}
+                          locked={locked}
+                          readOnly={costVersion.materialComponents.length > 0}
+                        />
+                        <CostInput
+                          label="Labor hours"
+                          name="laborHours"
+                          value={costVersion.laborHours.toString()}
+                          locked={locked}
+                        />
+                        <CostInput
+                          label="Hourly TRY"
+                          name="laborHourlyRateTry"
+                          value={costVersion.laborHourlyRateTry.toString()}
+                          locked={locked}
+                        />
+                        <CostInput
+                          label="Packaging TRY"
+                          name="packagingCostTry"
+                          value={costVersion.packagingCostTry.toString()}
+                          locked={locked}
+                        />
+                        <CostInput
+                          label="Other direct TRY"
+                          name="additionalDirectCostTry"
+                          value={costVersion.additionalDirectCostTry.toString()}
+                          locked={locked}
+                        />
+                        <CostInput
+                          label="Wastage %"
+                          name="wastageRate"
+                          value={costVersion.wastageRate.toString()}
+                          locked={locked}
+                        />
+                        <CostInput
+                          label="Maker payment TRY"
+                          name="additionalMakerPaymentTry"
+                          value={costVersion.additionalMakerPaymentTry.toString()}
+                          locked={locked}
+                        />
+                        <CostInput
+                          label="Equipment TRY"
+                          name="allocatedEquipmentCostTry"
+                          value={costVersion.allocatedEquipmentCostTry.toString()}
+                          locked={locked}
+                        />
+                        <CostInput
+                          label="Template"
+                          name="templateType"
+                          type="text"
+                          value={costVersion.templateType || ""}
+                          locked={locked}
+                          required={false}
+                        />
+                        <CostInput
+                          label="Change reason"
+                          name="changeReason"
+                          type="text"
+                          value={costVersion.changeReason || ""}
+                          locked={locked}
+                          required={false}
+                        />
+                        <CostInput
+                          label="Notes"
+                          name="notes"
+                          type="text"
+                          value={costVersion.notes || ""}
+                          locked={locked}
+                          required={false}
+                        />
+                        <button
+                          className="rounded-xl bg-jade px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={locked}
+                        >
+                          {locked ? "Locked by order" : "Save changes"}
+                        </button>
+                      </form>
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+                        <p className="text-[11px] text-stone-400">
+                          Created{" "}
+                          {costVersion.createdAt.toLocaleString("en-GB")}
+                          {costVersion.updatedAt > costVersion.createdAt
+                            ? ` · updated ${costVersion.updatedAt.toLocaleString("en-GB")}`
+                            : ""}
+                        </p>
+                        <form action={deleteProductCostAction}>
+                          <input
+                            type="hidden"
+                            name="id"
+                            value={costVersion.id}
+                          />
+                          <button
+                            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                            disabled={locked}
+                          >
+                            <Trash2 size={13} /> Delete version
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  );
+                })}
+                {!product.costVersions.length && (
+                  <p className="rounded-xl border border-dashed p-4 text-center text-sm text-stone-400">
+                    No cost version saved for this product.
+                  </p>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="card p-5">
@@ -217,11 +455,13 @@ export default async function ProductsPage() {
             Cost version
             <select className="field mt-1" name="productCostVersionId" required>
               {allProducts.flatMap((p) =>
-                p.costVersions.map((c) => (
-                  <option value={c.id} key={c.id}>
-                    {p.sku} · {c.effectiveFrom.toLocaleDateString("en-GB")}
-                  </option>
-                )),
+                p.costVersions
+                  .filter((c) => c._count.orderItems === 0)
+                  .map((c) => (
+                    <option value={c.id} key={c.id}>
+                      {p.sku} · {c.effectiveFrom.toLocaleDateString("en-GB")}
+                    </option>
+                  )),
               )}
             </select>
           </label>
@@ -258,17 +498,19 @@ export default async function ProductsPage() {
               defaultValue="0"
             />
           </label>
-          <button className="rounded-xl bg-jade px-3 py-2 text-sm text-white">
+          <button
+            className="rounded-xl bg-jade px-3 py-2 text-sm text-white disabled:opacity-40"
+            disabled={!hasEditableCostVersions}
+          >
             Add component
           </button>
         </form>
         <div className="mt-5 overflow-x-auto rounded-xl border">
-          <table className="w-full min-w-[980px] text-left text-sm">
+          <table className="w-full min-w-[1150px] text-left text-sm">
             <thead className="bg-stone-50 text-xs text-stone-500">
               <tr>
                 <th className="p-3">Product / cost version</th>
-                <th>Component</th>
-                <th>Quantity × unit</th>
+                <th>Edit component</th>
                 <th>Total material cost</th>
                 <th>Copy to another product</th>
                 <th>Delete</th>
@@ -278,6 +520,7 @@ export default async function ProductsPage() {
               {allProducts.flatMap((product) =>
                 product.costVersions.flatMap((costVersion, versionIndex) =>
                   costVersion.materialComponents.map((component) => {
+                    const locked = costVersion._count.orderItems > 0;
                     const copyTargets = allProducts
                       .filter(
                         (targetProduct) => targetProduct.id !== product.id,
@@ -299,15 +542,66 @@ export default async function ProductsPage() {
                               : " · historical"}
                           </span>
                         </td>
-                        <td className="py-3">
-                          <strong>{component.componentType}</strong>
-                          <span className="mt-1 block max-w-xs text-xs text-stone-500">
-                            {component.description || "No description"}
-                          </span>
-                        </td>
-                        <td className="py-3">
-                          {component.quantity.toFixed(2)} × ₺
-                          {component.unitCostTry.toFixed(2)}
+                        <td
+                          className="py-3 pr-3"
+                          id={`material-${component.id}`}
+                        >
+                          <form
+                            action={updateProductMaterialAction}
+                            className="grid min-w-[420px] grid-cols-2 gap-2"
+                          >
+                            <input
+                              type="hidden"
+                              name="id"
+                              value={component.id}
+                            />
+                            <input
+                              className="field py-2 text-xs"
+                              name="componentType"
+                              defaultValue={component.componentType}
+                              aria-label="Component type"
+                              disabled={locked}
+                              required
+                            />
+                            <input
+                              className="field py-2 text-xs"
+                              name="description"
+                              defaultValue={component.description || ""}
+                              placeholder="Description"
+                              aria-label="Component description"
+                              disabled={locked}
+                            />
+                            <input
+                              className="field py-2 text-xs"
+                              name="quantity"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              defaultValue={component.quantity.toString()}
+                              aria-label="Quantity used"
+                              disabled={locked}
+                              required
+                            />
+                            <input
+                              className="field py-2 text-xs"
+                              name="unitCostTry"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              defaultValue={component.unitCostTry.toString()}
+                              aria-label="Unit cost TRY"
+                              disabled={locked}
+                              required
+                            />
+                            <button
+                              className="col-span-2 rounded-lg border bg-white px-3 py-2 text-xs disabled:opacity-40"
+                              disabled={locked}
+                            >
+                              {locked
+                                ? "Locked by order"
+                                : "Save component changes"}
+                            </button>
+                          </form>
                         </td>
                         <td className="py-3 font-semibold">
                           ₺{component.totalCostTry.toFixed(2)}
@@ -353,7 +647,10 @@ export default async function ProductsPage() {
                               name="id"
                               value={component.id}
                             />
-                            <button className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                            <button
+                              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 disabled:opacity-40"
+                              disabled={locked}
+                            >
                               <Trash2 size={13} /> Delete
                             </button>
                           </form>
@@ -436,6 +733,22 @@ export default async function ProductsPage() {
             {listings.map((listing) => {
               const image = listing.images[0];
               const localProduct = listing.productLink?.product;
+              const latestCost = localProduct?.costVersions[0];
+              const latestCostTotal = latestCost
+                ? latestCost.materialCostTry
+                    .plus(
+                      latestCost.materialCostTry
+                        .mul(latestCost.wastageRate)
+                        .div(100),
+                    )
+                    .plus(
+                      latestCost.laborHours.mul(latestCost.laborHourlyRateTry),
+                    )
+                    .plus(latestCost.packagingCostTry)
+                    .plus(latestCost.additionalDirectCostTry)
+                    .plus(latestCost.additionalMakerPaymentTry)
+                    .plus(latestCost.allocatedEquipmentCostTry)
+                : null;
               const variationCount = inventoryProductCount(
                 listing.inventorySummary,
               );
@@ -621,19 +934,69 @@ export default async function ProductsPage() {
                         className={`mt-5 rounded-xl border p-3 text-xs ${localProduct ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}
                       >
                         {localProduct ? (
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span>
-                              Linked to {localProduct.sku} ·{" "}
-                              {localProduct.costVersions.length
-                                ? "latest cost version available"
-                                : "cost version still missing"}
-                            </span>
-                            <Link
-                              href="/calculator"
-                              className="font-medium underline"
-                            >
-                              Use in calculator →
-                            </Link>
+                          <div className="space-y-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span>
+                                Linked to {localProduct.sku} ·{" "}
+                                {latestCost
+                                  ? `cost version ${latestCost.effectiveFrom.toLocaleDateString("en-GB")}`
+                                  : "cost version still missing"}
+                              </span>
+                              <div className="flex flex-wrap gap-3">
+                                {latestCost && (
+                                  <Link
+                                    href={`#cost-version-${latestCost.id}`}
+                                    className="font-medium underline"
+                                  >
+                                    View / edit costs
+                                  </Link>
+                                )}
+                                <Link
+                                  href="/calculator"
+                                  className="font-medium underline"
+                                >
+                                  Use in calculator →
+                                </Link>
+                              </div>
+                            </div>
+                            {latestCost && latestCostTotal && (
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-emerald-200 pt-3 sm:grid-cols-4">
+                                <CostDatum
+                                  label="Materials"
+                                  value={`₺${latestCost.materialCostTry.toFixed(2)}`}
+                                />
+                                <CostDatum
+                                  label="Labour"
+                                  value={`${latestCost.laborHours.toFixed(2)} h × ₺${latestCost.laborHourlyRateTry.toFixed(2)}`}
+                                />
+                                <CostDatum
+                                  label="Packaging"
+                                  value={`₺${latestCost.packagingCostTry.toFixed(2)}`}
+                                />
+                                <CostDatum
+                                  label="Other direct"
+                                  value={`₺${latestCost.additionalDirectCostTry.toFixed(2)}`}
+                                />
+                                <CostDatum
+                                  label="Wastage"
+                                  value={`${latestCost.wastageRate.toFixed(2)}%`}
+                                />
+                                <CostDatum
+                                  label="Maker + equipment"
+                                  value={`₺${latestCost.additionalMakerPaymentTry.plus(latestCost.allocatedEquipmentCostTry).toFixed(2)}`}
+                                />
+                                <CostDatum
+                                  label="Template"
+                                  value={
+                                    latestCost.templateType || "Not entered"
+                                  }
+                                />
+                                <CostDatum
+                                  label="Direct total"
+                                  value={`₺${latestCostTotal.toFixed(2)}`}
+                                />
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <>
@@ -672,6 +1035,41 @@ export default async function ProductsPage() {
   );
 }
 
+function CostInput({
+  label,
+  name,
+  value,
+  type = "number",
+  locked,
+  readOnly = false,
+  required = true,
+}: {
+  label: string;
+  name: string;
+  value: string;
+  type?: "number" | "text" | "date";
+  locked: boolean;
+  readOnly?: boolean;
+  required?: boolean;
+}) {
+  return (
+    <label className="text-xs text-stone-500">
+      {label}
+      <input
+        className="field mt-1 disabled:bg-stone-100 disabled:text-stone-400"
+        name={name}
+        type={type}
+        defaultValue={value}
+        disabled={locked}
+        readOnly={readOnly}
+        required={required}
+        min={type === "number" ? "0" : undefined}
+        step={type === "number" ? "0.01" : undefined}
+      />
+    </label>
+  );
+}
+
 function Metric({
   icon,
   label,
@@ -700,6 +1098,19 @@ function Datum({ label, value }: { label: string; value: string }) {
         {label}
       </p>
       <p className="mt-1 text-xs font-medium text-stone-700">{value}</p>
+    </div>
+  );
+}
+
+function CostDatum({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[9px] uppercase tracking-[.1em] text-emerald-700/60">
+        {label}
+      </p>
+      <p className="mt-0.5 text-[11px] font-semibold text-emerald-900">
+        {value}
+      </p>
     </div>
   );
 }

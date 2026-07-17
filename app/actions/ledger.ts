@@ -1174,6 +1174,7 @@ export async function createProductCostAction(formData: FormData) {
       allocatedEquipmentCostTry: number,
       changeReason: optionalText,
       templateType: optionalText,
+      notes: optionalText,
     })
     .parse(Object.fromEntries(formData));
   const version = await prisma.$transaction(async (tx) => {
@@ -1189,6 +1190,92 @@ export async function createProductCostAction(formData: FormData) {
     return p;
   });
   redirect(`/products?cost=${version.id}`);
+}
+
+export async function updateProductCostAction(formData: FormData) {
+  const actor = await adminActor("/products");
+  const v = z
+    .object({
+      id: text,
+      effectiveFrom: date,
+      materialCostTry: number,
+      laborHours: number,
+      laborHourlyRateTry: number,
+      packagingCostTry: number,
+      additionalDirectCostTry: number,
+      wastageRate: number,
+      additionalMakerPaymentTry: number,
+      allocatedEquipmentCostTry: number,
+      changeReason: optionalText,
+      templateType: optionalText,
+      notes: optionalText,
+    })
+    .parse(Object.fromEntries(formData));
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.productCostVersion.findUniqueOrThrow({
+      where: { id: v.id },
+      include: {
+        materialComponents: true,
+        _count: { select: { orderItems: true } },
+      },
+    });
+    if (before._count.orderItems > 0) {
+      throw new Error(
+        "This cost version is used by an order and cannot be edited. Create a new effective-dated version instead.",
+      );
+    }
+    const { id, ...changes } = v;
+    const materialCostTry = before.materialComponents.length
+      ? before.materialComponents.reduce(
+          (total, component) => total.plus(component.totalCostTry),
+          new Decimal(0),
+        )
+      : changes.materialCostTry;
+    const after = await tx.productCostVersion.update({
+      where: { id },
+      data: { ...changes, materialCostTry },
+    });
+    await tx.auditLog.create({
+      data: {
+        entityType: "ProductCostVersion",
+        entityId: id,
+        action: "UPDATED",
+        actor,
+        beforeJson: JSON.stringify(before),
+        afterJson: JSON.stringify(after),
+      },
+    });
+  });
+  revalidateProductCosts();
+  redirect(`/products#cost-version-${v.id}`);
+}
+
+export async function deleteProductCostAction(formData: FormData) {
+  const actor = await adminActor("/products");
+  const id = text.parse(formData.get("id"));
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.productCostVersion.findUniqueOrThrow({
+      where: { id },
+      include: { _count: { select: { orderItems: true } } },
+    });
+    if (before._count.orderItems > 0) {
+      throw new Error(
+        "This cost version is used by an order and cannot be deleted.",
+      );
+    }
+    await tx.productCostVersion.delete({ where: { id } });
+    await tx.auditLog.create({
+      data: {
+        entityType: "ProductCostVersion",
+        entityId: id,
+        action: "DELETED",
+        actor,
+        beforeJson: JSON.stringify(before),
+      },
+    });
+  });
+  revalidateProductCosts();
+  redirect("/products#saved-cost-versions");
 }
 
 export async function duplicateProductCostSetupAction(formData: FormData) {
@@ -1316,7 +1403,13 @@ export async function createProductMaterialAction(formData: FormData) {
     .parse(Object.fromEntries(formData));
   const version = await prisma.productCostVersion.findUniqueOrThrow({
     where: { id: v.productCostVersionId },
+    include: { _count: { select: { orderItems: true } } },
   });
+  if (version._count.orderItems > 0) {
+    throw new Error(
+      "This cost version is used by an order. Create a new cost version before adding components.",
+    );
+  }
   await prisma.$transaction(async (tx) => {
     const row = await tx.productMaterialCost.create({
       data: {
@@ -1344,7 +1437,17 @@ export async function deleteProductMaterialAction(formData: FormData) {
   await prisma.$transaction(async (tx) => {
     const component = await tx.productMaterialCost.findUniqueOrThrow({
       where: { id },
+      include: {
+        productCostVersion: {
+          include: { _count: { select: { orderItems: true } } },
+        },
+      },
     });
+    if (component.productCostVersion?._count.orderItems) {
+      throw new Error(
+        "This component belongs to a cost version used by an order and cannot be deleted.",
+      );
+    }
     await tx.productMaterialCost.delete({ where: { id } });
     if (component.productCostVersionId) {
       await syncMaterialComponentTotal(tx, component.productCostVersionId);
@@ -1360,6 +1463,59 @@ export async function deleteProductMaterialAction(formData: FormData) {
     });
   });
   revalidateProductCosts();
+}
+
+export async function updateProductMaterialAction(formData: FormData) {
+  const actor = await adminActor("/products");
+  const v = z
+    .object({
+      id: text,
+      componentType: text,
+      description: optionalText,
+      quantity: number,
+      unitCostTry: number,
+    })
+    .parse(Object.fromEntries(formData));
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.productMaterialCost.findUniqueOrThrow({
+      where: { id: v.id },
+      include: {
+        productCostVersion: {
+          include: { _count: { select: { orderItems: true } } },
+        },
+      },
+    });
+    if (before.productCostVersion?._count.orderItems) {
+      throw new Error(
+        "This component belongs to a cost version used by an order and cannot be edited.",
+      );
+    }
+    const after = await tx.productMaterialCost.update({
+      where: { id: v.id },
+      data: {
+        componentType: v.componentType,
+        description: v.description,
+        quantity: v.quantity,
+        unitCostTry: v.unitCostTry,
+        totalCostTry: v.quantity * v.unitCostTry,
+      },
+    });
+    if (after.productCostVersionId) {
+      await syncMaterialComponentTotal(tx, after.productCostVersionId);
+    }
+    await tx.auditLog.create({
+      data: {
+        entityType: "ProductMaterialCost",
+        entityId: v.id,
+        action: "UPDATED",
+        actor,
+        beforeJson: JSON.stringify(before),
+        afterJson: JSON.stringify(after),
+      },
+    });
+  });
+  revalidateProductCosts();
+  redirect(`/products#material-${v.id}`);
 }
 
 export async function copyProductMaterialAction(formData: FormData) {
@@ -1379,7 +1535,10 @@ export async function copyProductMaterialAction(formData: FormData) {
     }
     await tx.product.findUniqueOrThrow({ where: { id: v.targetProductId } });
     let target = await tx.productCostVersion.findFirst({
-      where: { productId: v.targetProductId },
+      where: {
+        productId: v.targetProductId,
+        orderItems: { none: {} },
+      },
       orderBy: { effectiveFrom: "desc" },
     });
     target ??= await tx.productCostVersion.create({
