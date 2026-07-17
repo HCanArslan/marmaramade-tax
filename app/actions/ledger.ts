@@ -130,6 +130,7 @@ export async function createShippingQuoteAction(formData: FormData) {
   const actor = await adminActor("/shipping");
   const v = z
     .object({
+      productId: text,
       originCountry: text,
       originCity: text,
       destinationCountry: text,
@@ -147,9 +148,6 @@ export async function createShippingQuoteAction(formData: FormData) {
       pickup: number,
       remote: number,
       other: number,
-      customsPayer: z.enum(["UNKNOWN", "SELLER", "BUYER", "SHARED"]),
-      customsIncoterm: z.enum(["UNKNOWN", "DAP", "DDU", "DDP", "OTHER"]),
-      includeInSellerProfit: checkbox,
       currency: text,
       quoteDate: date,
       expirationDate: optionalText,
@@ -163,6 +161,7 @@ export async function createShippingQuoteAction(formData: FormData) {
   const total = v.base + v.fuel + v.insurance + v.pickup + v.remote + v.other;
   const quote = await prisma.shippingQuote.create({
     data: {
+      productId: v.productId,
       originCountry: v.originCountry,
       originCity: v.originCity,
       destinationCountry: v.destinationCountry,
@@ -193,7 +192,7 @@ export async function createShippingQuoteAction(formData: FormData) {
   });
   if (v.planningDefault) {
     await prisma.shippingQuote.updateMany({
-      where: { id: { not: quote.id } },
+      where: { id: { not: quote.id }, productId: v.productId },
       data: { planningDefault: false },
     });
   }
@@ -213,6 +212,7 @@ export async function createCustomsQuoteAction(formData: FormData) {
   const actor = await adminActor("/customs");
   const v = z
     .object({
+      productId: text,
       originCountry: text,
       destinationCountry: text,
       hsCode: text,
@@ -239,6 +239,7 @@ export async function createCustomsQuoteAction(formData: FormData) {
     .parse(Object.fromEntries(formData));
   const quote = await prisma.customsQuote.create({
     data: {
+      productId: v.productId,
       originCountry: v.originCountry,
       destinationCountry: v.destinationCountry,
       hsCode: v.hsCode,
@@ -317,6 +318,7 @@ export async function saveEtgbCostRecordAction(formData: FormData) {
   const actor = await adminActor("/customs-etgb");
   const v = z
     .object({
+      productId: text,
       status: z.enum([
         "UNKNOWN_PENDING_CONFIRMATION",
         "INCLUDED_IN_SHIPPING",
@@ -337,6 +339,7 @@ export async function saveEtgbCostRecordAction(formData: FormData) {
     .parse(Object.fromEntries(formData));
   const row = await prisma.etgbCostRecord.create({
     data: {
+      productId: v.productId,
       status: v.status,
       estimatedFeeUsd:
         v.status === "UNKNOWN_PENDING_CONFIRMATION" ? null : v.estimatedFeeUsd,
@@ -357,6 +360,79 @@ export async function saveEtgbCostRecordAction(formData: FormData) {
       entityType: "EtgbCostRecord",
       entityId: row.id,
       action: "VERSION_CREATED",
+      actor,
+    },
+  });
+  revalidatePath("/customs-etgb");
+  revalidatePath("/calculator");
+}
+
+export async function updateEtgbCostRecordAction(formData: FormData) {
+  const actor = await adminActor("/customs-etgb");
+  const v = z
+    .object({
+      id: text,
+      productId: text,
+      status: z.enum([
+        "UNKNOWN_PENDING_CONFIRMATION",
+        "INCLUDED_IN_SHIPPING",
+        "NO_SEPARATE_CHARGE",
+        "SEPARATE_FIXED_CHARGE",
+        "SEPARATE_VARIABLE_CHARGE",
+        "MANUAL",
+      ]),
+      estimatedFeeUsd: number,
+      actualFeeUsd: number,
+      includedInShipping: z.enum(["UNKNOWN", "YES", "NO"]),
+      deductFromProfit: checkbox,
+      source: text,
+      sourceDate: date,
+      effectiveFrom: date,
+      effectiveTo: optionalText,
+      notes: optionalText,
+    })
+    .parse(Object.fromEntries(formData));
+  const row = await prisma.etgbCostRecord.update({
+    where: { id: v.id },
+    data: {
+      productId: v.productId,
+      status: v.status,
+      estimatedFeeUsd:
+        v.status === "UNKNOWN_PENDING_CONFIRMATION" ? null : v.estimatedFeeUsd,
+      actualFeeUsd: v.actualFeeUsd > 0 ? v.actualFeeUsd : null,
+      includedInShipping:
+        v.includedInShipping === "UNKNOWN"
+          ? null
+          : v.includedInShipping === "YES",
+      deductFromProfit: v.deductFromProfit,
+      source: v.source,
+      sourceDate: v.sourceDate,
+      effectiveFrom: v.effectiveFrom,
+      effectiveTo: v.effectiveTo ? new Date(v.effectiveTo) : null,
+      notes: v.notes,
+    },
+  });
+  await prisma.auditLog.create({
+    data: {
+      entityType: "EtgbCostRecord",
+      entityId: row.id,
+      action: "UPDATED",
+      actor,
+    },
+  });
+  revalidatePath("/customs-etgb");
+  revalidatePath("/calculator");
+}
+
+export async function deleteEtgbCostRecordAction(formData: FormData) {
+  const actor = await adminActor("/customs-etgb");
+  const id = text.parse(formData.get("id"));
+  await prisma.etgbCostRecord.delete({ where: { id } });
+  await prisma.auditLog.create({
+    data: {
+      entityType: "EtgbCostRecord",
+      entityId: id,
+      action: "DELETED",
       actor,
     },
   });
@@ -496,9 +572,16 @@ export async function setPlanningDefaultShippingQuoteAction(
 ) {
   const actor = await adminActor("/shipping");
   const id = text.parse(formData.get("id"));
+  const selected = await prisma.shippingQuote.findUniqueOrThrow({
+    where: { id },
+    select: { productId: true },
+  });
   await prisma.$transaction([
     prisma.shippingQuote.updateMany({
-      where: { planningDefault: true },
+      where: {
+        planningDefault: true,
+        productId: selected.productId,
+      },
       data: { planningDefault: false },
     }),
     prisma.shippingQuote.update({

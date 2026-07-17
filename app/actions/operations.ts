@@ -611,6 +611,7 @@ export async function createCustomsProfileAction(formData: FormData) {
   const admin = await actor("/customs-etgb");
   const value = z
     .object({
+      productId: text,
       name: text,
       originCountry: z.string().length(2),
       destinationCountry: z.string().length(2),
@@ -640,10 +641,61 @@ export async function createCustomsProfileAction(formData: FormData) {
   revalidatePath("/customs-etgb");
 }
 
+export async function updateCustomsProfileAction(formData: FormData) {
+  const admin = await actor("/customs-etgb");
+  const value = z
+    .object({
+      id: text,
+      productId: text,
+      name: text,
+      originCountry: z.string().trim().length(2),
+      destinationCountry: z.string().trim().length(2),
+      incoterm: optionalText,
+      status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]),
+      effectiveFrom: date,
+      effectiveTo: optionalDate,
+      source: optionalText,
+      notes: optionalText,
+    })
+    .parse(Object.fromEntries(formData));
+  const profile = await prisma.customsProfile.update({
+    where: { id: value.id },
+    data: {
+      ...value,
+      id: undefined,
+      originCountry: value.originCountry.toUpperCase(),
+      destinationCountry: value.destinationCountry.toUpperCase(),
+    },
+  });
+  await audit({
+    entityType: "CustomsProfile",
+    entityId: profile.id,
+    action: "UPDATED",
+    actor: admin,
+    after: { name: profile.name, status: profile.status },
+  });
+  revalidatePath("/customs-etgb");
+}
+
+export async function deleteCustomsProfileAction(formData: FormData) {
+  const admin = await actor("/customs-etgb");
+  const id = text.parse(formData.get("id"));
+  await prisma.customsProfile.delete({ where: { id } });
+  await audit({
+    entityType: "CustomsProfile",
+    entityId: id,
+    action: "DELETED",
+    actor: admin,
+    after: { deleted: true },
+  });
+  revalidatePath("/customs-etgb");
+}
+
 export async function createTariffVersionAction(formData: FormData) {
   const admin = await actor("/customs-etgb");
   const value = z
     .object({
+      productId: text,
       hsCode: text,
       productDescription: text,
       material: optionalText,
@@ -672,10 +724,62 @@ export async function createTariffVersionAction(formData: FormData) {
   revalidatePath("/customs-etgb");
 }
 
+export async function updateTariffVersionAction(formData: FormData) {
+  const admin = await actor("/customs-etgb");
+  const value = z
+    .object({
+      id: text,
+      productId: text,
+      hsCode: text,
+      productDescription: text,
+      material: optionalText,
+      originCountry: z.string().trim().length(2),
+      destinationCountry: z.string().trim().length(2),
+      dutyRate: optionalDecimal,
+      effectiveFrom: date,
+      effectiveTo: optionalDate,
+      source: optionalText,
+      notes: optionalText,
+    })
+    .parse(Object.fromEntries(formData));
+  const tariff = await prisma.tariffVersion.update({
+    where: { id: value.id },
+    data: {
+      ...value,
+      id: undefined,
+      originCountry: value.originCountry.toUpperCase(),
+      destinationCountry: value.destinationCountry.toUpperCase(),
+    },
+  });
+  await audit({
+    entityType: "TariffVersion",
+    entityId: tariff.id,
+    action: "UPDATED",
+    actor: admin,
+    after: { hsCode: tariff.hsCode, dutyRate: tariff.dutyRate },
+  });
+  revalidatePath("/customs-etgb");
+}
+
+export async function deleteTariffVersionAction(formData: FormData) {
+  const admin = await actor("/customs-etgb");
+  const id = text.parse(formData.get("id"));
+  await prisma.tariffVersion.delete({ where: { id } });
+  await audit({
+    entityType: "TariffVersion",
+    entityId: id,
+    action: "DELETED",
+    actor: admin,
+    after: { deleted: true },
+  });
+  revalidatePath("/customs-etgb");
+}
+
 export async function createMicroExportCaseAction(formData: FormData) {
   const admin = await actor("/customs-etgb");
   const value = z
     .object({
+      productId: text,
       orderId: optionalText,
       exporterName: text,
       shipmentId: optionalText,
@@ -688,6 +792,70 @@ export async function createMicroExportCaseAction(formData: FormData) {
     action: "CREATED",
     actor: admin,
     after: { orderId: record.orderId, etgbStatus: record.etgbStatus },
+  });
+  revalidatePath("/customs-etgb");
+}
+
+export async function updateMicroExportCaseAction(formData: FormData) {
+  const admin = await actor("/customs-etgb");
+  const value = z
+    .object({
+      id: text,
+      productId: text,
+      orderId: optionalText,
+      exporterName: text,
+      shipmentId: optionalText,
+      status: z.enum(["DRAFT", "READY", "SUBMITTED", "COMPLETED", "ARCHIVED"]),
+      customsStatus: optionalText,
+      etgbStatus: z.enum([
+        "PENDING",
+        "READY",
+        "SUBMITTED",
+        "COMPLETED",
+        "FAILED",
+      ]),
+    })
+    .parse(Object.fromEntries(formData));
+  const record = await prisma.microExportCase.update({
+    where: { id: value.id },
+    data: { ...value, id: undefined },
+  });
+  await audit({
+    entityType: "MicroExportCase",
+    entityId: record.id,
+    action: "UPDATED",
+    actor: admin,
+    after: { status: record.status, etgbStatus: record.etgbStatus },
+  });
+  revalidatePath("/customs-etgb");
+}
+
+export async function deleteMicroExportCaseAction(formData: FormData) {
+  const admin = await actor("/customs-etgb");
+  const id = text.parse(formData.get("id"));
+  const record = await prisma.microExportCase.findUniqueOrThrow({
+    where: { id },
+  });
+  const hasEvidence = Boolean(
+    record.orderId ||
+    record.shipmentId ||
+    record.invoiceDocumentId ||
+    record.proformaDocumentId ||
+    record.etgbDocumentId ||
+    record.customsDocumentId,
+  );
+  if (hasEvidence || record.status !== "DRAFT") {
+    throw new Error(
+      "Only an unlinked draft ETGB case can be deleted. Remove its links or archive a progressed case.",
+    );
+  }
+  await prisma.microExportCase.delete({ where: { id } });
+  await audit({
+    entityType: "MicroExportCase",
+    entityId: id,
+    action: "DELETED",
+    actor: admin,
+    after: { deleted: true },
   });
   revalidatePath("/customs-etgb");
 }

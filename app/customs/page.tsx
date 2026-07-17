@@ -10,16 +10,23 @@ import { prisma } from "@/lib/prisma";
 
 export default async function CustomsPage() {
   await requireAdmin({ redirectTo: "/customs" });
-  const quotes = await prisma.customsQuote.findMany({
-    include: {
-      actualCharges: { orderBy: { sourceDate: "desc" }, take: 1 },
-      _count: {
-        select: { orders: true, documents: true, actualCharges: true },
+  const [products, quotes] = await Promise.all([
+    prisma.product.findMany({
+      where: { active: true },
+      orderBy: { sku: "asc" },
+    }),
+    prisma.customsQuote.findMany({
+      include: {
+        product: true,
+        actualCharges: { orderBy: { sourceDate: "desc" }, take: 1 },
+        _count: {
+          select: { orders: true, documents: true, actualCharges: true },
+        },
       },
-    },
-    orderBy: { quoteDate: "desc" },
-    take: 100,
-  });
+      orderBy: { quoteDate: "desc" },
+      take: 100,
+    }),
+  ]);
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <header>
@@ -60,6 +67,24 @@ export default async function CustomsPage() {
           action={createCustomsQuoteAction}
           className="mt-4 grid gap-3 md:grid-cols-4"
         >
+          <label className="text-xs text-stone-500">
+            Product
+            <select
+              className="field mt-1"
+              defaultValue=""
+              name="productId"
+              required
+            >
+              <option disabled value="">
+                Choose product
+              </option>
+              {products.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.sku} · {product.title}
+                </option>
+              ))}
+            </select>
+          </label>
           {[
             ["originCountry", "Origin", "TR"],
             ["destinationCountry", "Destination", "US"],
@@ -242,7 +267,7 @@ export default async function CustomsPage() {
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead>
             <tr className="border-b bg-stone-50">
-              <th className="p-4">Destination / HS</th>
+              <th className="p-4">Product / destination / HS</th>
               <th>Material</th>
               <th>Declared</th>
               <th>Duty</th>
@@ -277,7 +302,11 @@ export default async function CustomsPage() {
               return (
                 <tr className="border-b" key={q.id}>
                   <td className="p-4 font-medium">
-                    {q.destinationCountry} · {q.hsCode}
+                    {q.product?.sku ?? "Legacy unassigned"}
+                    <br />
+                    <span className="text-xs font-normal text-stone-500">
+                      {q.destinationCountry} · {q.hsCode}
+                    </span>
                   </td>
                   <td>{q.productMaterial || "—"}</td>
                   <td>

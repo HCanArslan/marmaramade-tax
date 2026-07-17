@@ -30,6 +30,17 @@ export interface CalculatorProductPreset {
   laborHourlyRateTry: string;
   packagingCostTry: string;
   additionalDirectCostTry: string;
+  internationalShippingUsd: string;
+  shippingInsuranceUsd: string;
+  customsDutyUsd: string;
+  additionalTariffUsd: string;
+  carrierProcessingFeeUsd: string;
+  brokerageFeeUsd: string;
+  customsClearanceFeeUsd: string;
+  destinationFeesUsd: string;
+  includeCustomsInSellerProfit: boolean;
+  etgbCostUsd: string;
+  includeEtgbInSellerProfit: boolean;
 }
 
 interface CalculatorExchangeRate {
@@ -121,6 +132,17 @@ export function CalculatorWorkspace({
       laborHourlyRateTry: product.laborHourlyRateTry,
       packagingCostTry: product.packagingCostTry,
       additionalDirectCostTry: product.additionalDirectCostTry,
+      internationalShippingUsd: product.internationalShippingUsd,
+      shippingInsuranceUsd: product.shippingInsuranceUsd,
+      customsDutyUsd: product.customsDutyUsd,
+      additionalTariffUsd: product.additionalTariffUsd,
+      carrierProcessingFeeUsd: product.carrierProcessingFeeUsd,
+      brokerageFeeUsd: product.brokerageFeeUsd,
+      customsClearanceFeeUsd: product.customsClearanceFeeUsd,
+      destinationFeesUsd: product.destinationFeesUsd,
+      includeCustomsInSellerProfit: product.includeCustomsInSellerProfit,
+      etgbCostUsd: product.etgbCostUsd,
+      includeEtgbInSellerProfit: product.includeEtgbInSellerProfit,
     }));
   };
   const reset = () => {
@@ -149,6 +171,18 @@ export function CalculatorWorkspace({
                 laborHourlyRateTry: product.laborHourlyRateTry,
                 packagingCostTry: product.packagingCostTry,
                 additionalDirectCostTry: product.additionalDirectCostTry,
+                internationalShippingUsd: product.internationalShippingUsd,
+                shippingInsuranceUsd: product.shippingInsuranceUsd,
+                customsDutyUsd: product.customsDutyUsd,
+                additionalTariffUsd: product.additionalTariffUsd,
+                carrierProcessingFeeUsd: product.carrierProcessingFeeUsd,
+                brokerageFeeUsd: product.brokerageFeeUsd,
+                customsClearanceFeeUsd: product.customsClearanceFeeUsd,
+                destinationFeesUsd: product.destinationFeesUsd,
+                includeCustomsInSellerProfit:
+                  product.includeCustomsInSellerProfit,
+                etgbCostUsd: product.etgbCostUsd,
+                includeEtgbInSellerProfit: product.includeEtgbInSellerProfit,
               })
             : null;
         const missing: string[] = [];
@@ -160,18 +194,18 @@ export function CalculatorWorkspace({
           );
         if (directCostTry.eq(0)) missing.push("product cost");
         if (
-          new Decimal(calculationInput.internationalShippingUsd)
-            .plus(calculationInput.shippingInsuranceUsd)
+          new Decimal(product.internationalShippingUsd)
+            .plus(product.shippingInsuranceUsd)
             .eq(0)
         )
           missing.push("international shipping");
         if (
-          new Decimal(calculationInput.customsDutyUsd)
-            .plus(calculationInput.additionalTariffUsd)
-            .plus(calculationInput.carrierProcessingFeeUsd)
-            .plus(calculationInput.brokerageFeeUsd)
-            .plus(calculationInput.customsClearanceFeeUsd)
-            .plus(calculationInput.destinationFeesUsd)
+          new Decimal(product.customsDutyUsd)
+            .plus(product.additionalTariffUsd)
+            .plus(product.carrierProcessingFeeUsd)
+            .plus(product.brokerageFeeUsd)
+            .plus(product.customsClearanceFeeUsd)
+            .plus(product.destinationFeesUsd)
             .eq(0)
         )
           missing.push("customs / destination charges");

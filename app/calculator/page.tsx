@@ -16,11 +16,11 @@ export default async function CalculatorPage() {
     overhead,
     businessProfile,
     legalProfile,
-    shipping,
-    customs,
+    shippingQuotes,
+    customsQuotes,
     feeProfile,
     assumptionProfile,
-    etgbCost,
+    etgbCosts,
     externalComparison,
     planningTaxRule,
     exportVatRule,
@@ -48,7 +48,7 @@ export default async function CalculatorPage() {
     prisma.legalOperatingProfile.findFirst({
       orderBy: { effectiveFrom: "desc" },
     }),
-    prisma.shippingQuote.findFirst({
+    prisma.shippingQuote.findMany({
       where: {
         shippingCurrency: "USD",
         OR: [{ expirationDate: null }, { expirationDate: { gte: now } }],
@@ -76,8 +76,9 @@ export default async function CalculatorPage() {
         ],
       },
       orderBy: [{ planningDefault: "desc" }, { quoteDate: "desc" }],
+      take: 100,
     }),
-    prisma.customsQuote.findFirst({
+    prisma.customsQuote.findMany({
       where: {
         declaredValueCurrency: "USD",
         OR: [{ expirationDate: null }, { expirationDate: { gte: now } }],
@@ -105,6 +106,7 @@ export default async function CalculatorPage() {
         ],
       },
       orderBy: { quoteDate: "desc" },
+      take: 100,
     }),
     prisma.feeProfile.findFirst({
       where: { marketplace: "Etsy", country: "TR" },
@@ -118,12 +120,13 @@ export default async function CalculatorPage() {
       },
       orderBy: { effectiveFrom: "desc" },
     }),
-    prisma.etgbCostRecord.findFirst({
+    prisma.etgbCostRecord.findMany({
       where: {
         effectiveFrom: { lte: now },
         OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
       },
       orderBy: { effectiveFrom: "desc" },
+      take: 100,
     }),
     prisma.externalCalculatorComparison.findFirst({
       orderBy: { effectiveFrom: "desc" },
@@ -147,6 +150,10 @@ export default async function CalculatorPage() {
     }),
   ]);
 
+  const shipping = shippingQuotes.find((quote) => quote.productId === null);
+  const customs = customsQuotes.find((quote) => quote.productId === null);
+  const etgbCost = etgbCosts.find((record) => record.productId === null);
+
   const exchangeRate = await getWeeklyUsdTryRate(savedRate);
   const feeDefaults = applyFeeProfile(
     defaultCalculatorInput,
@@ -154,6 +161,25 @@ export default async function CalculatorPage() {
   );
   const presets = products.flatMap((product) => {
     const cost = product.costVersions[0];
+    const productShipping =
+      shippingQuotes.find((quote) => quote.productId === product.id) ??
+      shipping;
+    const productCustoms =
+      customsQuotes.find((quote) => quote.productId === product.id) ?? customs;
+    const productEtgb =
+      etgbCosts.find((record) => record.productId === product.id) ?? etgbCost;
+    const productCustomsDuty = productCustoms
+      ? (productCustoms.customsDutyAmount ??
+        productCustoms.declaredValue
+          .mul(productCustoms.customsDutyRate)
+          .div(100))
+      : new Decimal(0);
+    const productAdditionalTariff = productCustoms
+      ? (productCustoms.additionalTariffAmount ??
+        productCustoms.declaredValue
+          .mul(productCustoms.additionalTariffRate)
+          .div(100))
+      : new Decimal(0);
     const materialWithWastage = cost
       ? cost.materialCostTry.plus(
           cost.materialCostTry.mul(cost.wastageRate).div(100),
@@ -185,6 +211,38 @@ export default async function CalculatorPage() {
         laborHourlyRateTry: cost?.laborHourlyRateTry.toString() ?? "0",
         packagingCostTry: cost?.packagingCostTry.toString() ?? "0",
         additionalDirectCostTry: otherDirectCosts.toString(),
+        internationalShippingUsd: productShipping
+          ? productShipping.shippingCost
+              .minus(productShipping.insuranceCost)
+              .toString()
+          : "0",
+        shippingInsuranceUsd: productShipping?.insuranceCost.toString() ?? "0",
+        customsDutyUsd: productCustomsDuty.toString(),
+        additionalTariffUsd: productAdditionalTariff.toString(),
+        carrierProcessingFeeUsd:
+          productCustoms?.carrierProcessingFee.toString() ?? "0",
+        brokerageFeeUsd: productCustoms?.brokerageFee.toString() ?? "0",
+        customsClearanceFeeUsd:
+          productCustoms?.customsClearanceFee.toString() ?? "0",
+        destinationFeesUsd: productCustoms
+          ? productCustoms.otherDestinationFee
+              .plus(productCustoms.destinationTax)
+              .plus(productCustoms.insuranceFee)
+              .toString()
+          : "0",
+        includeCustomsInSellerProfit:
+          productCustoms?.includeInSellerProfit ??
+          assumptionProfile?.includeCustomsInSellerProfit ??
+          false,
+        etgbCostUsd:
+          productEtgb?.actualFeeUsd?.toString() ??
+          productEtgb?.estimatedFeeUsd?.toString() ??
+          assumptionProfile?.estimatedEtgbFeeUsd?.toString() ??
+          "0",
+        includeEtgbInSellerProfit:
+          productEtgb?.deductFromProfit ??
+          assumptionProfile?.includeEtgbInSellerProfit ??
+          false,
       };
     });
   });
@@ -233,12 +291,16 @@ export default async function CalculatorPage() {
       }
       planningSources={{
         products: "Latest saved cost version for each product",
-        shipping: shipping
-          ? `${shipping.planningDefault ? "Planning default" : "Latest saved fallback"}: ${shipping.carrier} · ${shipping.serviceName} · ${shipping.destinationCountry} · ${shipping.quoteDate.toLocaleDateString("en-GB")}`
-          : "No current non-example USD shipping quote",
-        customs: customs
-          ? `Latest current quote: ${customs.destinationCountry} · ${customs.hsCode} · ${customs.quoteDate.toLocaleDateString("en-GB")}`
-          : "No current non-example USD customs quote",
+        shipping: shippingQuotes.some((quote) => quote.productId)
+          ? `Product-specific parcel quotes saved for ${new Set(shippingQuotes.filter((quote) => quote.productId).map((quote) => quote.productId)).size} product(s); Calculator loads the selected product's dimensions and price`
+          : shipping
+            ? `${shipping.planningDefault ? "Planning default" : "Latest saved fallback"}: ${shipping.carrier} · ${shipping.serviceName} · ${shipping.destinationCountry} · ${shipping.quoteDate.toLocaleDateString("en-GB")}`
+            : "No current non-example USD shipping quote",
+        customs: customsQuotes.some((quote) => quote.productId)
+          ? `Product-specific customs quotes saved for ${new Set(customsQuotes.filter((quote) => quote.productId).map((quote) => quote.productId)).size} product(s); Calculator loads the selected product's quote`
+          : customs
+            ? `Latest current quote: ${customs.destinationCountry} · ${customs.hsCode} · ${customs.quoteDate.toLocaleDateString("en-GB")}`
+            : "No current non-example USD customs quote",
         overhead: overhead
           ? `Monthly overhead saved for ${overhead.month.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}`
           : businessProfile
@@ -276,7 +338,9 @@ export default async function CalculatorPage() {
           legalProfile?.sellerFeeVatTreatment === "ETSY_CHARGES_SELLER_FEE_VAT"
             ? "CHARGED_BY_ETSY"
             : "ACCOUNTANT_MANAGED",
-        internationalShippingUsd: shipping?.shippingCost.toString() ?? "0",
+        internationalShippingUsd: shipping
+          ? shipping.shippingCost.minus(shipping.insuranceCost).toString()
+          : "0",
         shippingInsuranceUsd: shipping?.insuranceCost.toString() ?? "0",
         customsDutyUsd: customsDuty.toString(),
         additionalTariffUsd: additionalTariff.toString(),
@@ -285,7 +349,10 @@ export default async function CalculatorPage() {
         brokerageFeeUsd: customs?.brokerageFee.toString() ?? "0",
         customsClearanceFeeUsd: customs?.customsClearanceFee.toString() ?? "0",
         destinationFeesUsd: customs
-          ? customs.otherDestinationFee.plus(customs.destinationTax).toString()
+          ? customs.otherDestinationFee
+              .plus(customs.destinationTax)
+              .plus(customs.insuranceFee)
+              .toString()
           : "0",
         includeCustomsInSellerProfit:
           customs?.includeInSellerProfit ??

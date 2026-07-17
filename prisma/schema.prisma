@@ -35,6 +35,12 @@ model Product {
   materialCosts      ProductMaterialCost[]
   documents          StoredDocument[]
   goalProducts       GoalScenarioProduct[]
+  shippingQuotes     ShippingQuote[]
+  customsQuotes      CustomsQuote[]
+  customsProfiles    CustomsProfile[]
+  tariffVersions     TariffVersion[]
+  etgbCostRecords    EtgbCostRecord[]
+  microExportCases   MicroExportCase[]
 
   @@index([active])
 }
@@ -163,6 +169,7 @@ model BusinessProfileVersion {
 
 model ShippingQuote {
   id                 String           @id @default(cuid())
+  productId          String?
   originCountry      String
   originCity         String
   destinationCountry String
@@ -205,12 +212,15 @@ model ShippingQuote {
   actualShippingCost Decimal?
   actualCostCurrency String?
   reconciledAt       DateTime?
+  product            Product?         @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   @@index([destinationCountry, quoteDate])
+  @@index([productId, destinationCountry, quoteDate])
 }
 
 model CustomsQuote {
   id                     String                @id @default(cuid())
+  productId              String?
   originCountry          String
   destinationCountry     String
   hsCode                 String
@@ -244,8 +254,10 @@ model CustomsQuote {
   includeInSellerProfit  Boolean               @default(false)
   estimateStatus         String                @default("ESTIMATE_NOT_ACTUAL")
   actualCharges          CustomsActualCharge[]
+  product                Product?              @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   @@index([destinationCountry, hsCode, quoteDate])
+  @@index([productId, destinationCountry, quoteDate])
 }
 
 model ExchangeRateSnapshot {
@@ -473,6 +485,7 @@ model CustomsActualCharge {
 
 model EtgbCostRecord {
   id                 String         @id @default(cuid())
+  productId          String?
   status             EtgbCostStatus @default(UNKNOWN_PENDING_CONFIRMATION)
   estimatedFeeUsd    Decimal?
   actualFeeUsd       Decimal?
@@ -487,8 +500,10 @@ model EtgbCostRecord {
   notes              String?
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
+  product            Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   @@index([effectiveFrom, effectiveTo])
+  @@index([productId, effectiveFrom, effectiveTo])
 }
 
 model ExternalCalculatorComparison {
@@ -2116,6 +2131,7 @@ model ShippingCostAdjustment {
 
 model CustomsProfile {
   id                 String             @id @default(cuid())
+  productId          String?
   name               String
   originCountry      String
   destinationCountry String
@@ -2128,12 +2144,15 @@ model CustomsProfile {
   notes              String?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
+  product            Product?           @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   @@index([originCountry, destinationCountry, effectiveFrom, effectiveTo])
+  @@index([productId, effectiveFrom, effectiveTo])
 }
 
 model TariffVersion {
   id                 String             @id @default(cuid())
+  productId          String?
   hsCode             String
   productDescription String
   material           String?
@@ -2147,12 +2166,15 @@ model TariffVersion {
   notes              String?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
+  product            Product?           @relation(fields: [productId], references: [id], onDelete: SetNull)
 
-  @@unique([hsCode, originCountry, destinationCountry, effectiveFrom])
+  @@unique([productId, hsCode, originCountry, destinationCountry, effectiveFrom])
+  @@index([productId, effectiveFrom, effectiveTo])
 }
 
 model MicroExportCase {
   id                 String   @id @default(cuid())
+  productId          String?
   orderId            String?  @unique
   status             String   @default("DRAFT")
   exporterName       String
@@ -2165,8 +2187,10 @@ model MicroExportCase {
   customsDocumentId  String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  product            Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   @@index([status, etgbStatus])
+  @@index([productId, status, etgbStatus])
 }
 
 model TaxRuleVersion {

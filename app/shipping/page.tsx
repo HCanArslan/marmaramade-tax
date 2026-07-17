@@ -10,10 +10,17 @@ import { prisma } from "@/lib/prisma";
 
 export default async function ShippingPage() {
   await requireAdmin({ redirectTo: "/shipping" });
-  const quotes = await prisma.shippingQuote.findMany({
-    orderBy: { quoteDate: "desc" },
-    take: 100,
-  });
+  const [products, quotes] = await Promise.all([
+    prisma.product.findMany({
+      where: { active: true },
+      orderBy: { sku: "asc" },
+    }),
+    prisma.shippingQuote.findMany({
+      include: { product: true },
+      orderBy: { quoteDate: "desc" },
+      take: 100,
+    }),
+  ]);
   const now = new Date();
   const automaticFallback = quotes.find(
     (quote) =>
@@ -39,6 +46,24 @@ export default async function ShippingPage() {
           action={createShippingQuoteAction}
           className="mt-4 grid gap-3 md:grid-cols-4"
         >
+          <label className="text-xs text-stone-500">
+            Product
+            <select
+              className="field mt-1"
+              defaultValue=""
+              name="productId"
+              required
+            >
+              <option disabled value="">
+                Choose product
+              </option>
+              {products.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.sku} · {product.title}
+                </option>
+              ))}
+            </select>
+          </label>
           <Input name="originCountry" label="Origin country" value="TR" />
           <Input name="originCity" label="Origin city" value="Istanbul" />
           <Input name="destinationCountry" label="Destination" value="US" />
@@ -102,9 +127,9 @@ export default async function ShippingPage() {
         <table className="w-full min-w-[800px] text-left text-sm">
           <thead>
             <tr className="border-b bg-stone-50 text-stone-500">
-              <th className="p-4">Carrier/service</th>
+              <th className="p-4">Product / carrier</th>
               <th>Route</th>
-              <th>Billable</th>
+              <th>Parcel / billable</th>
               <th>Total</th>
               <th>Quote / expiry</th>
               <th>Status</th>
@@ -116,10 +141,41 @@ export default async function ShippingPage() {
             {quotes.map((q) => (
               <tr className="border-b" key={q.id}>
                 <td className="p-4 font-medium">
-                  {q.carrier} · {q.serviceName}
+                  {q.product?.sku ?? "Legacy unassigned"}
+                  <br />
+                  <span className="text-xs font-normal text-stone-500">
+                    {q.carrier} · {q.serviceName}
+                  </span>
                 </td>
                 <td>
                   {q.originCountry} → {q.destinationCountry}
+                </td>
+                <td>
+                  {q.packageLengthCm.toFixed(1)} × {q.packageWidthCm.toFixed(1)}{" "}
+                  × {q.packageHeightCm.toFixed(1)} cm
+                  <br />
+                  <span className="text-xs text-stone-500">
+                    actual {q.actualWeightKg.toFixed(2)} kg · billable{" "}
+                    {q.billableWeightKg.toFixed(2)} kg
+                  </span>
+                </td>
+                <td>
+                  {q.shippingCost.toFixed(2)} {q.shippingCurrency}
+                </td>
+                <td>
+                  {q.quoteDate.toLocaleDateString("en-GB")} /{" "}
+                  {q.expirationDate?.toLocaleDateString("en-GB") || "—"}
+                </td>
+                <td>
+                  <span className="pill">
+                    {q.expirationDate && q.expirationDate < now
+                      ? "Expired"
+                      : q.planningDefault
+                        ? "Planning default"
+                        : q.id === automaticFallback?.id
+                          ? "Automatic Calculator fallback"
+                          : "Saved quote"}
+                  </span>
                 </td>
                 <td>
                   {q.actualShippingCost === null ? (
@@ -160,25 +216,6 @@ export default async function ShippingPage() {
                       )}
                     </span>
                   )}
-                </td>
-                <td>{q.billableWeightKg.toFixed(2)} kg</td>
-                <td>
-                  {q.shippingCost.toFixed(2)} {q.shippingCurrency}
-                </td>
-                <td>
-                  {q.quoteDate.toLocaleDateString("en-GB")} /{" "}
-                  {q.expirationDate?.toLocaleDateString("en-GB") || "—"}
-                </td>
-                <td>
-                  <span className="pill">
-                    {q.expirationDate && q.expirationDate < now
-                      ? "Expired"
-                      : q.planningDefault
-                        ? "Planning default"
-                        : q.id === automaticFallback?.id
-                          ? "Automatic Calculator fallback"
-                          : "Saved quote"}
-                  </span>
                 </td>
                 <td>
                   <div className="flex flex-wrap gap-1">

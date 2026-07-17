@@ -198,4 +198,60 @@ describe("planning usability", () => {
     expect(migration).toContain("tax_2026_income_bracket_2");
     expect(migration).toContain("tax_2026_income_safety_reserve");
   });
+
+  it("edits and safely deletes Customs and ETGB workspace records", async () => {
+    const [page, operations, ledger] = await Promise.all([
+      source("app/customs-etgb/page.tsx"),
+      source("app/actions/operations.ts"),
+      source("app/actions/ledger.ts"),
+    ]);
+
+    expect(page).toContain("updateCustomsProfileAction");
+    expect(page).toContain("deleteCustomsProfileAction");
+    expect(page).toContain("updateTariffVersionAction");
+    expect(page).toContain("deleteTariffVersionAction");
+    expect(page).toContain("updateMicroExportCaseAction");
+    expect(page).toContain("deleteMicroExportCaseAction");
+    expect(page).toContain("updateEtgbCostRecordAction");
+    expect(page).toContain("deleteEtgbCostRecordAction");
+    expect(page).toContain("case status to Archived instead of deleting it");
+    expect(operations).toContain(
+      "Only an unlinked draft ETGB case can be deleted",
+    );
+    expect(operations).toContain('entityType: "CustomsProfile"');
+    expect(operations).toContain('entityType: "TariffVersion"');
+    expect(ledger).toContain('entityType: "EtgbCostRecord"');
+    expect(ledger).toContain('action: "UPDATED"');
+    expect(ledger).toContain('action: "DELETED"');
+  });
+
+  it("keeps shipping, customs, tariff, and ETGB assumptions product-specific", async () => {
+    const [shipping, customs, etgb, calculatorPage, calculator, schema, icon] =
+      await Promise.all([
+        source("app/shipping/page.tsx"),
+        source("app/customs/page.tsx"),
+        source("app/customs-etgb/page.tsx"),
+        source("app/calculator/page.tsx"),
+        source("components/calculator-workspace.tsx"),
+        source("prisma/schema.prisma"),
+        source("app/icon.svg"),
+      ]);
+
+    expect(shipping).toContain('name="productId"');
+    expect(shipping).toContain("packageLengthCm");
+    expect(customs).toContain('name="productId"');
+    expect(etgb).toContain("ProductSelect");
+    expect(calculatorPage).toContain(
+      "shippingQuotes.find((quote) => quote.productId === product.id)",
+    );
+    expect(calculatorPage).toContain(
+      "customsQuotes.find((quote) => quote.productId === product.id)",
+    );
+    expect(calculator).toContain(
+      "internationalShippingUsd: product.internationalShippingUsd",
+    );
+    expect(schema).toContain("shippingQuotes     ShippingQuote[]");
+    expect(schema).toContain("customsQuotes      CustomsQuote[]");
+    expect(icon).toContain('fill="#173b34"');
+  });
 });
