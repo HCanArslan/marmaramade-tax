@@ -159,4 +159,21 @@ describe("planning usability", () => {
     expect(actions).toContain("used by an order and cannot be deleted");
     expect(actions).toContain('action: "UPDATED"');
   });
+
+  it("archives customs quotes explicitly and deletes only unused quotes", async () => {
+    const [customs, actions] = await Promise.all([
+      source("app/customs/page.tsx"),
+      source("app/actions/ledger.ts"),
+    ]);
+    expect(customs).toContain("deleteCustomsQuoteAction");
+    expect(customs).toContain('q.estimateStatus === "ARCHIVED"');
+    expect(customs).toContain("Permanently delete this unused quote");
+    expect(customs).toContain("Linked records protect this quote");
+    expect(actions).toContain("deleteCustomsQuoteAction");
+    expect(actions).toContain('estimateStatus: "ARCHIVED"');
+    expect(actions).toContain("includeInSellerProfit: false");
+    expect(actions).toContain("actualCharges: true");
+    expect(actions).toContain('action: "DELETED"');
+    expect(actions).toContain("Archive it instead");
+  });
 });

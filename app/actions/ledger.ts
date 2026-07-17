@@ -532,6 +532,7 @@ export async function duplicateCustomsQuoteAction(formData: FormData) {
       quoteDate: new Date(),
       effectiveFrom: new Date(),
       expirationDate: null,
+      estimateStatus: "ESTIMATE_NOT_ACTUAL",
       notes: `Duplicated from ${id}. ${data.notes || ""}`,
     },
   });
@@ -551,7 +552,11 @@ export async function archiveCustomsQuoteAction(formData: FormData) {
   await prisma.$transaction([
     prisma.customsQuote.update({
       where: { id },
-      data: { expirationDate: new Date() },
+      data: {
+        expirationDate: new Date(),
+        estimateStatus: "ARCHIVED",
+        includeInSellerProfit: false,
+      },
     }),
     prisma.auditLog.create({
       data: {
@@ -563,6 +568,45 @@ export async function archiveCustomsQuoteAction(formData: FormData) {
     }),
   ]);
   revalidatePath("/customs");
+  revalidatePath("/calculator");
+  redirect(`/customs?archived=${id}`);
+}
+
+export async function deleteCustomsQuoteAction(formData: FormData) {
+  const actor = await adminActor("/customs");
+  const id = text.parse(formData.get("id"));
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.customsQuote.findUniqueOrThrow({
+      where: { id },
+      include: {
+        _count: {
+          select: { orders: true, documents: true, actualCharges: true },
+        },
+      },
+    });
+    const references =
+      before._count.orders +
+      before._count.documents +
+      before._count.actualCharges;
+    if (references > 0) {
+      throw new Error(
+        "This customs quote is linked to an order, document, or actual charge and cannot be deleted. Archive it instead.",
+      );
+    }
+    await tx.customsQuote.delete({ where: { id } });
+    await tx.auditLog.create({
+      data: {
+        entityType: "CustomsQuote",
+        entityId: id,
+        action: "DELETED",
+        actor,
+        beforeJson: JSON.stringify(before),
+      },
+    });
+  });
+  revalidatePath("/customs");
+  revalidatePath("/calculator");
+  redirect(`/customs?deleted=${id}`);
 }
 
 export async function createComplianceCaseAction(formData: FormData) {

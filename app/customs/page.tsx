@@ -2,6 +2,7 @@ import {
   archiveCustomsQuoteAction,
   createCustomsActualChargeAction,
   createCustomsQuoteAction,
+  deleteCustomsQuoteAction,
   duplicateCustomsQuoteAction,
 } from "@/app/actions/ledger";
 import { requireAdmin } from "@/lib/auth/require-admin";
@@ -10,7 +11,12 @@ import { prisma } from "@/lib/prisma";
 export default async function CustomsPage() {
   await requireAdmin({ redirectTo: "/customs" });
   const quotes = await prisma.customsQuote.findMany({
-    include: { actualCharges: { orderBy: { sourceDate: "desc" }, take: 1 } },
+    include: {
+      actualCharges: { orderBy: { sourceDate: "desc" }, take: 1 },
+      _count: {
+        select: { orders: true, documents: true, actualCharges: true },
+      },
+    },
     orderBy: { quoteDate: "desc" },
     take: 100,
   });
@@ -264,6 +270,10 @@ export default async function CustomsPage() {
                 .plus(q.destinationTax)
                 .plus(q.otherDestinationFee);
               const actual = q.actualCharges[0];
+              const archived = q.estimateStatus === "ARCHIVED";
+              const deleteBlocked =
+                q._count.orders + q._count.documents + q._count.actualCharges >
+                0;
               return (
                 <tr className="border-b" key={q.id}>
                   <td className="p-4 font-medium">
@@ -277,9 +287,11 @@ export default async function CustomsPage() {
                   <td>{tariff.toFixed(2)}</td>
                   <td>{total.toFixed(2)}</td>
                   <td>
-                    {q.expirationDate && q.expirationDate < new Date()
-                      ? "Expired"
-                      : "Current"}
+                    {archived
+                      ? "Archived"
+                      : q.expirationDate && q.expirationDate < new Date()
+                        ? "Expired"
+                        : "Current"}
                   </td>
                   <td>
                     {q.customsPayer} / {q.customsIncoterm}
@@ -294,7 +306,7 @@ export default async function CustomsPage() {
                       : "Not recorded"}
                   </td>
                   <td>
-                    <div className="flex gap-1">
+                    <div className="flex flex-wrap gap-1">
                       <form action={duplicateCustomsQuoteAction}>
                         <input type="hidden" name="id" value={q.id} />
                         <button className="rounded border px-2 py-1 text-xs">
@@ -303,8 +315,25 @@ export default async function CustomsPage() {
                       </form>
                       <form action={archiveCustomsQuoteAction}>
                         <input type="hidden" name="id" value={q.id} />
-                        <button className="rounded border px-2 py-1 text-xs">
-                          Archive
+                        <button
+                          className="rounded border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-40"
+                          disabled={archived}
+                        >
+                          {archived ? "Archived" : "Archive"}
+                        </button>
+                      </form>
+                      <form action={deleteCustomsQuoteAction}>
+                        <input type="hidden" name="id" value={q.id} />
+                        <button
+                          className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                          disabled={deleteBlocked}
+                          title={
+                            deleteBlocked
+                              ? "Linked records protect this quote; archive it instead."
+                              : "Permanently delete this unused quote"
+                          }
+                        >
+                          Delete
                         </button>
                       </form>
                     </div>
