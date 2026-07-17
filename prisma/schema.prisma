@@ -2170,19 +2170,26 @@ model MicroExportCase {
 }
 
 model TaxRuleVersion {
-  id                 String             @id @default(cuid())
-  name               String
-  taxType            String
-  rate               Decimal?
-  threshold          Decimal?
-  currency           String?
-  confirmationStatus ConfirmationStatus @default(UNKNOWN)
-  effectiveFrom      DateTime
-  effectiveTo        DateTime?
-  source             String?
-  notes              String?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  id                  String             @id @default(cuid())
+  name                String
+  taxType             String
+  purpose             String             @default("LEGAL_RATE")
+  calculationMethod   String             @default("FLAT_RATE")
+  taxBase             String?
+  rate                Decimal?
+  lowerBound          Decimal?
+  upperBound          Decimal?
+  threshold           Decimal?
+  currency            String?
+  isPlanningDefault   Boolean            @default(false)
+  evidenceRequirement String?
+  confirmationStatus  ConfirmationStatus @default(UNKNOWN)
+  effectiveFrom       DateTime
+  effectiveTo         DateTime?
+  source              String?
+  notes               String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
   @@index([taxType, effectiveFrom, effectiveTo])
 }

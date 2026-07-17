@@ -5,12 +5,14 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
+import Decimal from "decimal.js";
 
 const text = z.string().trim().min(1);
 const optionalText = z
   .string()
   .trim()
-  .transform((value) => value || undefined);
+  .transform((value) => value || undefined)
+  .optional();
 const decimal = z
   .string()
   .trim()
@@ -696,15 +698,34 @@ export async function createTaxRuleAction(formData: FormData) {
     .object({
       name: text,
       taxType: text,
+      purpose: z.enum(["LEGAL_RATE", "PLANNING_RESERVE", "VAT_TREATMENT"]),
+      calculationMethod: z.enum([
+        "FLAT_RATE",
+        "PROGRESSIVE_BRACKET",
+        "FULL_EXEMPTION_EXPORT",
+      ]),
+      taxBase: optionalText,
       rate: optionalDecimal,
+      lowerBound: optionalDecimal,
+      upperBound: optionalDecimal,
       threshold: optionalDecimal,
       currency: optionalText,
+      isPlanningDefault: checkbox,
+      evidenceRequirement: optionalText,
       effectiveFrom: date,
       source: optionalText,
       notes: optionalText,
     })
     .parse(Object.fromEntries(formData));
-  const rule = await prisma.taxRuleVersion.create({ data: value });
+  const rule = await prisma.$transaction(async (tx) => {
+    if (value.isPlanningDefault) {
+      await tx.taxRuleVersion.updateMany({
+        where: { purpose: "PLANNING_RESERVE", isPlanningDefault: true },
+        data: { isPlanningDefault: false },
+      });
+    }
+    return tx.taxRuleVersion.create({ data: value });
+  });
   await audit({
     entityType: "TaxRuleVersion",
     entityId: rule.id,
@@ -746,19 +767,25 @@ export async function upsertVatPeriodAction(formData: FormData) {
       month: z.coerce.number().int().min(1).max(12),
       outputVat: decimal,
       inputVat: decimal,
-      estimatedPayable: decimal,
+      estimatedPayable: optionalDecimal,
       filedPayable: optionalDecimal,
     })
     .parse(Object.fromEntries(formData));
+  const estimatedPayable =
+    value.estimatedPayable ??
+    Decimal.max(
+      new Decimal(value.outputVat).minus(value.inputVat),
+      0,
+    ).toString();
   const period = await prisma.vatPeriod.upsert({
     where: { year_month: { year: value.year, month: value.month } },
     update: {
       outputVat: value.outputVat,
       inputVat: value.inputVat,
-      estimatedPayable: value.estimatedPayable,
+      estimatedPayable,
       filedPayable: value.filedPayable,
     },
-    create: value,
+    create: { ...value, estimatedPayable },
   });
   await audit({
     entityType: "VatPeriod",
@@ -768,7 +795,7 @@ export async function upsertVatPeriodAction(formData: FormData) {
     after: {
       year: period.year,
       month: period.month,
-      estimatedPayable: value.estimatedPayable,
+      estimatedPayable,
       filed: Boolean(value.filedPayable),
     },
   });
@@ -783,11 +810,35 @@ export async function upsertIncomeTaxEstimateAction(formData: FormData) {
       period: text,
       taxableBusinessBase: decimal,
       salaryIncomeIncluded: checkbox,
-      estimatedTax: decimal,
+      estimatedTax: optionalDecimal,
       currency: text.transform((v) => v.toUpperCase()),
       assumptions: text,
     })
     .parse(Object.fromEntries(formData));
+  const provisionalRule = await prisma.taxRuleVersion.findFirst({
+    where: {
+      taxType: "PROVISIONAL_INCOME_TAX",
+      effectiveFrom: { lte: new Date(`${value.year}-12-31T23:59:59.999Z`) },
+      OR: [
+        { effectiveTo: null },
+        { effectiveTo: { gte: new Date(`${value.year}-01-01T00:00:00.000Z`) } },
+      ],
+    },
+    orderBy: { effectiveFrom: "desc" },
+  });
+  const estimatedTax =
+    value.estimatedTax ??
+    (provisionalRule?.rate
+      ? new Decimal(value.taxableBusinessBase)
+          .mul(provisionalRule.rate.toString())
+          .div(100)
+          .toString()
+      : undefined);
+  if (!estimatedTax) {
+    throw new Error(
+      "Estimated tax is required until a provisional income-tax rule has been saved.",
+    );
+  }
   const assumptionsJson = {
     professionalInput: value.assumptions,
     automaticLegalConclusion: false,
@@ -797,7 +848,7 @@ export async function upsertIncomeTaxEstimateAction(formData: FormData) {
     update: {
       taxableBusinessBase: value.taxableBusinessBase,
       salaryIncomeIncluded: value.salaryIncomeIncluded,
-      estimatedTax: value.estimatedTax,
+      estimatedTax,
       currency: value.currency,
       assumptionsJson,
     },
@@ -806,7 +857,7 @@ export async function upsertIncomeTaxEstimateAction(formData: FormData) {
       period: value.period,
       taxableBusinessBase: value.taxableBusinessBase,
       salaryIncomeIncluded: value.salaryIncomeIncluded,
-      estimatedTax: value.estimatedTax,
+      estimatedTax,
       currency: value.currency,
       assumptionsJson,
     },
@@ -819,7 +870,7 @@ export async function upsertIncomeTaxEstimateAction(formData: FormData) {
     after: {
       year: estimate.year,
       period: estimate.period,
-      estimatedTax: value.estimatedTax,
+      estimatedTax,
       salaryIncomeIncluded: estimate.salaryIncomeIncluded,
     },
   });

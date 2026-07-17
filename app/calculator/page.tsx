@@ -22,6 +22,8 @@ export default async function CalculatorPage() {
     assumptionProfile,
     etgbCost,
     externalComparison,
+    planningTaxRule,
+    exportVatRule,
   ] = await Promise.all([
     prisma.product.findMany({
       where: { active: true, etsyListingLinks: { some: {} } },
@@ -126,6 +128,23 @@ export default async function CalculatorPage() {
     prisma.externalCalculatorComparison.findFirst({
       orderBy: { effectiveFrom: "desc" },
     }),
+    prisma.taxRuleVersion.findFirst({
+      where: {
+        purpose: "PLANNING_RESERVE",
+        isPlanningDefault: true,
+        effectiveFrom: { lte: now },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
+      },
+      orderBy: { effectiveFrom: "desc" },
+    }),
+    prisma.taxRuleVersion.findFirst({
+      where: {
+        taxType: "EXPORT_VAT",
+        effectiveFrom: { lte: now },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
+      },
+      orderBy: { effectiveFrom: "desc" },
+    }),
   ]);
 
   const exchangeRate = await getWeeklyUsdTryRate(savedRate);
@@ -228,9 +247,11 @@ export default async function CalculatorPage() {
         fees: feeProfile
           ? `Etsy fee profile: ${feeProfile.name}`
           : "Built-in Etsy planning assumptions; save the official profile",
-        tax: legalProfile
-          ? `Legal profile: ${legalProfile.name} · ${legalProfile.incomeTaxReserveRate.toString()}% planning reserve`
-          : "No current legal operating profile",
+        tax: planningTaxRule?.rate
+          ? `${planningTaxRule.name}: ${planningTaxRule.rate.toString()}% cash-planning reserve (not an additional filed tax)${exportVatRule ? ` · ${exportVatRule.name}; ${exportVatRule.evidenceRequirement ?? "export evidence required"}` : ""}`
+          : legalProfile
+            ? `Legal profile fallback: ${legalProfile.name} · ${legalProfile.incomeTaxReserveRate.toString()}% planning reserve`
+            : "No current tax planning reserve",
         reserves:
           "Return, damage, exchange-loss and domestic-logistics assumptions from Quick calculator",
       }}
@@ -243,7 +264,10 @@ export default async function CalculatorPage() {
             businessProfile?.expectedMonthlyOrders ||
             1,
         ),
-        taxReserveRate: legalProfile?.incomeTaxReserveRate.toString() ?? "0",
+        taxReserveRate:
+          planningTaxRule?.rate?.toString() ??
+          legalProfile?.incomeTaxReserveRate.toString() ??
+          "0",
         businessStatus:
           legalProfile?.operatingMode === "SOLE_PROPRIETORSHIP"
             ? "SOLE_PROPRIETORSHIP"

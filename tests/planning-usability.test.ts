@@ -176,4 +176,26 @@ describe("planning usability", () => {
     expect(actions).toContain('action: "DELETED"');
     expect(actions).toContain("Archive it instead");
   });
+
+  it("connects saved tax planning rules to Calculator without mixing filed tax", async () => {
+    const [taxes, actions, calculatorPage, migration] = await Promise.all([
+      source("app/taxes/page.tsx"),
+      source("app/actions/operations.ts"),
+      source("app/calculator/page.tsx"),
+      source(
+        "prisma/migrations/20260717120000_tax_planning_rules/migration.sql",
+      ),
+    ]);
+
+    expect(taxes).toContain("Calculator planning reserve");
+    expect(taxes).toContain("blank = saved rate");
+    expect(taxes).toContain("full exemption");
+    expect(actions).toContain('taxType: "PROVISIONAL_INCOME_TAX"');
+    expect(actions).toContain("estimatedPayable ??");
+    expect(calculatorPage).toContain('purpose: "PLANNING_RESERVE"');
+    expect(calculatorPage).toContain("planningTaxRule?.rate");
+    expect(migration).toContain("tax_2026_income_bracket_1");
+    expect(migration).toContain("tax_2026_income_bracket_2");
+    expect(migration).toContain("tax_2026_income_safety_reserve");
+  });
 });
