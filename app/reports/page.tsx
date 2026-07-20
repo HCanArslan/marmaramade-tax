@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth/require-admin";
-import { prisma } from "@/lib/prisma";
+import { getLatestOrderCostSnapshots } from "@/lib/reporting";
 import Decimal from "decimal.js";
 
 const exports = [
@@ -13,28 +13,58 @@ const exports = [
   "documents",
   "compliance-cases",
   "goals",
-  "bank-accounts", "owner-transactions", "expenses", "recurring-expenses", "fixed-assets",
-  "materials", "material-inventory", "production-batches", "finished-inventory",
-  "etsy-listings", "etsy-receipts", "etsy-payments", "etsy-ledger", "etsy-payouts",
-  "shipentegra-quotes", "shipments", "tracking", "customs-profiles", "tariffs", "etgb-cases",
-  "tax-obligations", "sgk", "accountant-periods", "audit-events",
+  "bank-accounts",
+  "owner-transactions",
+  "expenses",
+  "recurring-expenses",
+  "fixed-assets",
+  "materials",
+  "material-inventory",
+  "production-batches",
+  "finished-inventory",
+  "etsy-listings",
+  "etsy-receipts",
+  "etsy-payments",
+  "etsy-ledger",
+  "etsy-payouts",
+  "shipentegra-quotes",
+  "shipments",
+  "tracking",
+  "customs-profiles",
+  "tariffs",
+  "etgb-cases",
+  "tax-obligations",
+  "sgk",
+  "accountant-periods",
+  "audit-events",
 ];
 export default async function ReportsPage() {
   await requireAdmin({ redirectTo: "/reports" });
-  const snapshots = await prisma.orderCostSnapshot.findMany({
-    include: { order: true },
-    orderBy: { calculatedAt: "desc" },
-  });
-  const revenue = snapshots.reduce((n, x) => n.plus(x.grossRevenueUsd.toString()), new Decimal(0));
-  const profit = snapshots.reduce((n, x) => n.plus(x.estimatedProfitUsd.toString()), new Decimal(0));
-  const costs = snapshots.reduce((n, x) => n.plus(x.totalCostUsd.toString()), new Decimal(0));
+  const snapshots = await getLatestOrderCostSnapshots();
+  const revenue = snapshots.reduce(
+    (n, x) => n.plus(x.grossRevenueUsd.toString()),
+    new Decimal(0),
+  );
+  const profit = snapshots.reduce(
+    (n, x) => n.plus(x.estimatedProfitUsd.toString()),
+    new Decimal(0),
+  );
+  const costs = snapshots.reduce(
+    (n, x) => n.plus(x.totalCostUsd.toString()),
+    new Decimal(0),
+  );
   const months = new Map<
     string,
     { revenue: Decimal; profit: Decimal; cost: Decimal; orders: number }
   >();
   for (const s of snapshots) {
     const key = s.order.orderDate.toISOString().slice(0, 7);
-    const m = months.get(key) || { revenue: new Decimal(0), profit: new Decimal(0), cost: new Decimal(0), orders: 0 };
+    const m = months.get(key) || {
+      revenue: new Decimal(0),
+      profit: new Decimal(0),
+      cost: new Decimal(0),
+      orders: 0,
+    };
     m.revenue = m.revenue.plus(s.grossRevenueUsd.toString());
     m.profit = m.profit.plus(s.estimatedProfitUsd.toString());
     m.cost = m.cost.plus(s.totalCostUsd.toString());
@@ -98,7 +128,12 @@ export default async function ReportsPage() {
           URLs.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
-          <Link className="rounded-xl border bg-white px-3 py-2 text-xs font-medium" href="/reports/print">Printable / PDF summary</Link>
+          <Link
+            className="rounded-xl border bg-white px-3 py-2 text-xs font-medium"
+            href="/reports/print"
+          >
+            Printable / PDF summary
+          </Link>
           {exports.map((x) => (
             <Link
               className="rounded-xl border bg-white px-3 py-2 text-xs font-medium"
