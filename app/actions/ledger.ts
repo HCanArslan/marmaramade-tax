@@ -549,6 +549,105 @@ export async function duplicateShippingQuoteAction(formData: FormData) {
   revalidatePath("/shipping");
   redirect(`/shipping?duplicated=${row.id}`);
 }
+
+export async function copyShippingQuoteToProductsAction(formData: FormData) {
+  const actor = await adminActor("/shipping");
+  const value = z
+    .object({
+      id: text,
+      targetProductIds: z.array(text),
+      copyToAllOtherProducts: checkbox,
+    })
+    .refine(
+      (input) =>
+        input.copyToAllOtherProducts || input.targetProductIds.length > 0,
+      { message: "Choose at least one destination product." },
+    )
+    .parse({
+      id: formData.get("id"),
+      targetProductIds: formData.getAll("targetProductIds"),
+      copyToAllOtherProducts: formData.get("copyToAllOtherProducts"),
+    });
+  const targetProductIds = [...new Set(value.targetProductIds)];
+  const copies = await prisma.$transaction(async (tx) => {
+    const source = await tx.shippingQuote.findUniqueOrThrow({
+      where: { id: value.id },
+    });
+    if (source.productId && targetProductIds.includes(source.productId)) {
+      throw new Error("Choose products other than the source product.");
+    }
+    const targets = await tx.product.findMany({
+      where: {
+        active: true,
+        ...(value.copyToAllOtherProducts
+          ? source.productId
+            ? { id: { not: source.productId } }
+            : {}
+          : { id: { in: targetProductIds } }),
+      },
+      select: { id: true, sku: true },
+    });
+    if (
+      !value.copyToAllOtherProducts &&
+      targets.length !== targetProductIds.length
+    ) {
+      throw new Error("One or more destination products are unavailable.");
+    }
+    if (targets.length === 0) {
+      throw new Error("No other active products are available.");
+    }
+
+    const {
+      id: _id,
+      productId: _productId,
+      createdAt,
+      updatedAt,
+      ...data
+    } = source;
+    void _id;
+    void _productId;
+    void createdAt;
+    void updatedAt;
+    const created = [];
+    for (const target of targets) {
+      const copy = await tx.shippingQuote.create({
+        data: {
+          ...data,
+          productId: target.id,
+          planningDefault: false,
+          activeExpected: false,
+          estimateStatus: "ESTIMATE",
+          actualShippingCost: null,
+          actualCostCurrency: null,
+          reconciledAt: null,
+          notes: `Copied from shipping quote ${value.id}. ${data.notes || ""}`,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          entityType: "ShippingQuote",
+          entityId: copy.id,
+          action: "COPIED_TO_PRODUCT",
+          actor,
+          beforeJson: JSON.stringify({
+            sourceQuoteId: value.id,
+            sourceProductId: source.productId,
+          }),
+          afterJson: JSON.stringify({
+            targetProductId: target.id,
+            targetSku: target.sku,
+          }),
+        },
+      });
+      created.push(copy);
+    }
+    return created;
+  });
+  revalidatePath("/shipping");
+  revalidatePath("/calculator");
+  redirect(`/shipping?copied=${copies.length}`);
+}
+
 export async function archiveShippingQuoteAction(formData: FormData) {
   const actor = await adminActor("/shipping");
   const id = text.parse(formData.get("id"));

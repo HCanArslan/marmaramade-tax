@@ -198,6 +198,27 @@ describe("planning usability", () => {
     expect(actions).toContain('action: "DELETED"');
   });
 
+  it("copies one shipping quote to several other products at once", async () => {
+    const [shipping, actions] = await Promise.all([
+      source("app/shipping/page.tsx"),
+      source("app/actions/ledger.ts"),
+    ]);
+    expect(shipping).toContain("copyShippingQuoteToProductsAction");
+    expect(shipping).toContain("Copy to products");
+    expect(shipping).toContain('name="targetProductIds"');
+    expect(shipping).toContain('name="copyToAllOtherProducts"');
+    expect(shipping).toContain("All other active products");
+    expect(shipping).toContain("Copy to selected");
+    expect(shipping).toContain("product.id !== q.productId");
+    expect(actions).toContain("copyShippingQuoteToProductsAction");
+    expect(actions).toContain('formData.getAll("targetProductIds")');
+    expect(actions).toContain("value.copyToAllOtherProducts");
+    expect(actions).toContain("targetProductIds.includes(source.productId)");
+    expect(actions).toContain('action: "COPIED_TO_PRODUCT"');
+    expect(actions).toContain("actualShippingCost: null");
+    expect(actions).toContain("reconciledAt: null");
+  });
+
   it("connects saved tax planning rules to Calculator without mixing filed tax", async () => {
     const [taxes, actions, calculatorPage, migration] = await Promise.all([
       source("app/taxes/page.tsx"),

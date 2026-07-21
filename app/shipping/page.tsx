@@ -1,5 +1,6 @@
 import {
   archiveShippingQuoteAction,
+  copyShippingQuoteToProductsAction,
   createShippingQuoteAction,
   deleteShippingQuoteAction,
   duplicateShippingQuoteAction,
@@ -42,13 +43,18 @@ export default async function ShippingPage({
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <Header />
-      {(params.duplicated || params.archived || params.deleted) && (
+      {(params.duplicated ||
+        params.copied ||
+        params.archived ||
+        params.deleted) && (
         <p className="rounded-xl border border-jade/20 bg-jade/5 px-4 py-3 text-sm text-jade">
           {params.duplicated
             ? "Shipping quote duplicated. The new copy is ready to edit or use."
-            : params.archived
-              ? "Shipping quote archived and removed from planning defaults."
-              : "Unused shipping quote permanently deleted."}
+            : params.copied
+              ? `Shipping quote copied to ${params.copied} product${params.copied === "1" ? "" : "s"}.`
+              : params.archived
+                ? "Shipping quote archived and removed from planning defaults."
+                : "Unused shipping quote permanently deleted."}
         </p>
       )}
       <section className="card p-5">
@@ -58,7 +64,8 @@ export default async function ShippingPage({
           default. If none is marked, it automatically uses the latest current
           non-example USD quote. Include any ShipEntegra or ETGB service charge
           separately on Customs & ETGB. This quote is international transport
-          only unless its evidence explicitly says otherwise.
+          only unless its evidence explicitly says otherwise. Saved quotes can
+          be copied to several products at once from the table below.
         </p>
         <form
           action={createShippingQuoteAction}
@@ -159,6 +166,9 @@ export default async function ShippingPage({
             {quotes.map((q) => {
               const archived = q.estimateStatus === "ARCHIVED";
               const deleteBlocked = q._count.orders + q._count.documents > 0;
+              const copyTargets = products.filter(
+                (product) => product.id !== q.productId,
+              );
               return (
                 <tr className="border-b" key={q.id}>
                   <td className="p-4 font-medium">
@@ -260,6 +270,62 @@ export default async function ShippingPage({
                           Duplicate
                         </button>
                       </form>
+                      {copyTargets.length > 0 && (
+                        <details className="min-w-44 rounded border bg-white px-2 py-1 text-xs">
+                          <summary className="cursor-pointer select-none font-medium">
+                            Copy to products
+                          </summary>
+                          <form
+                            action={copyShippingQuoteToProductsAction}
+                            className="mt-2 space-y-2 border-t pt-2"
+                          >
+                            <input type="hidden" name="id" value={q.id} />
+                            <p className="max-w-56 text-stone-500">
+                              Apply this same quote to one or more products.
+                            </p>
+                            <label className="flex cursor-pointer items-start gap-2 rounded bg-jade/5 px-2 py-2 text-jade">
+                              <input
+                                className="mt-0.5"
+                                type="checkbox"
+                                name="copyToAllOtherProducts"
+                              />
+                              <span>
+                                <strong>All other active products</strong>
+                                <br />
+                                Fastest for a shared shipping setup
+                              </span>
+                            </label>
+                            <p className="text-center text-stone-400">
+                              or choose specific products
+                            </p>
+                            <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
+                              {copyTargets.map((product) => (
+                                <label
+                                  className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 hover:bg-stone-50"
+                                  key={product.id}
+                                >
+                                  <input
+                                    className="mt-0.5"
+                                    type="checkbox"
+                                    name="targetProductIds"
+                                    value={product.id}
+                                  />
+                                  <span>
+                                    <strong>{product.sku}</strong>
+                                    <br />
+                                    <span className="text-stone-500">
+                                      {product.title}
+                                    </span>
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                            <button className="w-full rounded bg-jade px-2 py-1.5 font-medium text-white">
+                              Copy to selected
+                            </button>
+                          </form>
+                        </details>
+                      )}
                       <form action={archiveShippingQuoteAction}>
                         <input type="hidden" name="id" value={q.id} />
                         <button
