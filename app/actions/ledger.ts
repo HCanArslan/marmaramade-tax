@@ -566,7 +566,8 @@ export async function copyShippingQuoteToProductsAction(formData: FormData) {
     .parse({
       id: formData.get("id"),
       targetProductIds: formData.getAll("targetProductIds"),
-      copyToAllOtherProducts: formData.get("copyToAllOtherProducts"),
+      copyToAllOtherProducts:
+        formData.get("copyToAllOtherProducts") ?? undefined,
     });
   const targetProductIds = [...new Set(value.targetProductIds)];
   const copies = await prisma.$transaction(async (tx) => {

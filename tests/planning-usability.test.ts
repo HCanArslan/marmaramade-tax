@@ -212,6 +212,9 @@ describe("planning usability", () => {
     expect(shipping).toContain("product.id !== q.productId");
     expect(actions).toContain("copyShippingQuoteToProductsAction");
     expect(actions).toContain('formData.getAll("targetProductIds")');
+    expect(actions).toContain(
+      'formData.get("copyToAllOtherProducts") ?? undefined',
+    );
     expect(actions).toContain("value.copyToAllOtherProducts");
     expect(actions).toContain("targetProductIds.includes(source.productId)");
     expect(actions).toContain('action: "COPIED_TO_PRODUCT"');
