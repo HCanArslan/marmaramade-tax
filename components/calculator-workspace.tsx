@@ -5,6 +5,12 @@ import Link from "next/link";
 import Decimal from "decimal.js";
 import { AlertTriangle, ChevronDown, Info, RotateCcw } from "lucide-react";
 import { calculate, solvePrice } from "@/lib/domain/calculator";
+import {
+  analyzeProfitability,
+  defaultProfitabilityThresholds,
+  type ProfitabilityThresholds,
+} from "@/lib/domain/profitability";
+import { ProfitabilitySimulator } from "@/components/profitability-simulator";
 import { defaultCalculatorInput } from "@/lib/domain/defaults";
 import { formatMoney } from "@/lib/domain/money";
 import type { CalculatorInput } from "@/lib/domain/types";
@@ -28,6 +34,10 @@ export interface CalculatorProductPreset {
   materialCostTry: string;
   laborHours: string;
   laborHourlyRateTry: string;
+  economicHourlyRateTry: string | null;
+  economicHourlyRateSource: string;
+  productionHoursSource: string;
+  paidLaborRateSource: string;
   packagingCostTry: string;
   additionalDirectCostTry: string;
   internationalShippingUsd: string;
@@ -41,6 +51,7 @@ export interface CalculatorProductPreset {
   includeCustomsInSellerProfit: boolean;
   etgbCostUsd: string;
   includeEtgbInSellerProfit: boolean;
+  etgbStatus: string;
 }
 
 interface CalculatorExchangeRate {
@@ -73,12 +84,16 @@ export function CalculatorWorkspace({
   planningDefaults,
   planningSources,
   externalComparison,
+  profitabilityThresholds = defaultProfitabilityThresholds,
+  profitabilityTargetsSource,
 }: {
   products: CalculatorProductPreset[];
   exchangeRate: CalculatorExchangeRate;
   planningDefaults: Partial<CalculatorInput>;
   planningSources: PlanningSources;
   externalComparison: ExternalComparison | null;
+  profitabilityThresholds?: ProfitabilityThresholds;
+  profitabilityTargetsSource: string;
 }) {
   const [input, setInput] = useState<CalculatorInput>({
     ...defaultCalculatorInput,
@@ -92,6 +107,14 @@ export function CalculatorWorkspace({
   const [tab, setTab] = useState<Tab>("quick");
   const [targetProfit, setTargetProfit] = useState("50");
   const [targetMargin, setTargetMargin] = useState("30");
+  const [profitSort, setProfitSort] = useState<
+    | "cashProfit"
+    | "economicProfit"
+    | "cashPerHour"
+    | "economicPerHour"
+    | "cashMargin"
+    | "economicMargin"
+  >("cashProfit");
   const calculationInput = input;
   const result = useMemo(() => calculate(calculationInput), [calculationInput]);
   const set = (key: keyof CalculatorInput, value: string | boolean) =>
@@ -160,9 +183,9 @@ export function CalculatorWorkspace({
           0,
           Math.floor(Number(planQuantities[product.id] || 0)),
         );
-        const calculation =
+        const productInput: CalculatorInput | null =
           product.currency === "USD"
-            ? calculate({
+            ? {
                 ...calculationInput,
                 itemSubtotalUsd: product.originalPrice,
                 sellerFundedDiscountUsd: product.discountAmount,
@@ -183,8 +206,43 @@ export function CalculatorWorkspace({
                   product.includeCustomsInSellerProfit,
                 etgbCostUsd: product.etgbCostUsd,
                 includeEtgbInSellerProfit: product.includeEtgbInSellerProfit,
-              })
+              }
             : null;
+        const scenarioA = productInput
+          ? analyzeProfitability({
+              calculatorInput: {
+                ...productInput,
+                includeCustomsInSellerProfit: false,
+              },
+              economicHourlyRateTry: product.economicHourlyRateTry,
+              quantity,
+              thresholds: profitabilityThresholds,
+            })
+          : null;
+        const scenarioB = productInput
+          ? analyzeProfitability({
+              calculatorInput: {
+                ...productInput,
+                includeCustomsInSellerProfit: true,
+              },
+              economicHourlyRateTry: product.economicHourlyRateTry,
+              quantity,
+              thresholds: profitabilityThresholds,
+            })
+          : null;
+        const customsSensitive = Boolean(
+          scenarioA?.cashProfit.gt(0) && scenarioB?.cashProfit.lt(0),
+        );
+        const analysis = productInput
+          ? analyzeProfitability({
+              calculatorInput: productInput,
+              economicHourlyRateTry: product.economicHourlyRateTry,
+              quantity,
+              thresholds: profitabilityThresholds,
+              customsSensitive,
+            })
+          : null;
+        const calculation = analysis?.calculation ?? null;
         const missing: string[] = [];
         const directCostTry = new Decimal(product.materialCostTry)
           .plus(product.packagingCostTry)
@@ -213,15 +271,27 @@ export function CalculatorWorkspace({
           missing.push("monthly business overhead");
         if (new Decimal(calculationInput.taxReserveRate).eq(0))
           missing.push("tax reserve");
-        return { product, quantity, calculation, missing };
+        if (!analysis?.productionHoursPerUnit) missing.push("production time");
+        if (!analysis?.economicLabourCostUsd)
+          missing.push("economic labour rate");
+        return {
+          product,
+          quantity,
+          calculation,
+          analysis,
+          scenarioA,
+          scenarioB,
+          missing,
+        };
       }),
-    [calculationInput, planQuantities, products],
+    [calculationInput, planQuantities, products, profitabilityThresholds],
   );
   const planTotals = useMemo(
     () =>
       planRows.reduce(
         (totals, row) => {
-          if (!row.calculation || row.quantity === 0) return totals;
+          if (!row.calculation || !row.analysis || row.quantity === 0)
+            return totals;
           const quantity = new Decimal(row.quantity);
           return {
             units: totals.units + row.quantity,
@@ -258,6 +328,11 @@ export function CalculatorWorkspace({
             etgb: totals.etgb.plus(
               row.calculation.totals.etgbCostUsd.mul(quantity),
             ),
+            etgbUnknown:
+              totals.etgbUnknown +
+              (row.product.etgbStatus === "UNKNOWN_PENDING_CONFIRMATION"
+                ? 1
+                : 0),
             overhead: totals.overhead.plus(
               row.calculation.totals.allocatedBusinessOverheadUsd.mul(quantity),
             ),
@@ -270,6 +345,55 @@ export function CalculatorWorkspace({
             profit: totals.profit.plus(
               row.calculation.totals.estimatedAfterReserveProfit.mul(quantity),
             ),
+            economicProfit: row.analysis.economicProfit
+              ? totals.economicProfit.plus(
+                  row.analysis.economicProfit.mul(quantity),
+                )
+              : totals.economicProfit,
+            economicMissing:
+              totals.economicMissing + (row.analysis.economicProfit ? 0 : 1),
+            productionHours: row.analysis.plannedProductionHours
+              ? totals.productionHours.plus(row.analysis.plannedProductionHours)
+              : totals.productionHours,
+            hoursMissing:
+              totals.hoursMissing +
+              (row.analysis.plannedProductionHours ? 0 : 1),
+            belowMinimum:
+              totals.belowMinimum +
+              (row.analysis.cashProfit.lt(
+                profitabilityThresholds.minimumCashProfitUsd,
+              )
+                ? 1
+                : 0),
+            gradeA: totals.gradeA + (row.analysis.grade === "A" ? 1 : 0),
+            gradeB: totals.gradeB + (row.analysis.grade === "B" ? 1 : 0),
+            gradeC: totals.gradeC + (row.analysis.grade === "C" ? 1 : 0),
+            gradeD: totals.gradeD + (row.analysis.grade === "D" ? 1 : 0),
+            scenarioACash: totals.scenarioACash.plus(
+              row.scenarioA!.cashProfit.mul(quantity),
+            ),
+            scenarioBCash: totals.scenarioBCash.plus(
+              row.scenarioB!.cashProfit.mul(quantity),
+            ),
+            scenarioAEconomic: row.scenarioA!.economicProfit
+              ? totals.scenarioAEconomic.plus(
+                  row.scenarioA!.economicProfit.mul(quantity),
+                )
+              : totals.scenarioAEconomic,
+            scenarioBEconomic: row.scenarioB!.economicProfit
+              ? totals.scenarioBEconomic.plus(
+                  row.scenarioB!.economicProfit.mul(quantity),
+                )
+              : totals.scenarioBEconomic,
+            scenarioALosses:
+              totals.scenarioALosses +
+              (row.scenarioA!.cashProfit.lt(0) ? 1 : 0),
+            scenarioBLosses:
+              totals.scenarioBLosses +
+              (row.scenarioB!.cashProfit.lt(0) ? 1 : 0),
+            gradeChanges:
+              totals.gradeChanges +
+              (row.scenarioA!.grade !== row.scenarioB!.grade ? 1 : 0),
           };
         },
         {
@@ -285,20 +409,80 @@ export function CalculatorWorkspace({
           customs: new Decimal(0),
           customsExposure: new Decimal(0),
           etgb: new Decimal(0),
+          etgbUnknown: 0,
           overhead: new Decimal(0),
           tax: new Decimal(0),
           totalCosts: new Decimal(0),
           profit: new Decimal(0),
+          economicProfit: new Decimal(0),
+          economicMissing: 0,
+          productionHours: new Decimal(0),
+          hoursMissing: 0,
+          belowMinimum: 0,
+          gradeA: 0,
+          gradeB: 0,
+          gradeC: 0,
+          gradeD: 0,
+          scenarioACash: new Decimal(0),
+          scenarioBCash: new Decimal(0),
+          scenarioAEconomic: new Decimal(0),
+          scenarioBEconomic: new Decimal(0),
+          scenarioALosses: 0,
+          scenarioBLosses: 0,
+          gradeChanges: 0,
         },
       ),
-    [planRows],
+    [planRows, profitabilityThresholds.minimumCashProfitUsd],
   );
   const selectedPlanRows = planRows.filter((row) => row.quantity > 0);
+  const sortedPlanRows = [...planRows].sort((a, b) => {
+    const value = (row: (typeof planRows)[number]) => {
+      if (!row.analysis) return new Decimal("-1e30");
+      switch (profitSort) {
+        case "cashProfit":
+          return row.analysis.cashProfit;
+        case "economicProfit":
+          return row.analysis.economicProfit ?? new Decimal("-1e30");
+        case "cashPerHour":
+          return row.analysis.cashProfitPerHour ?? new Decimal("-1e30");
+        case "economicPerHour":
+          return row.analysis.economicProfitPerHour ?? new Decimal("-1e30");
+        case "cashMargin":
+          return row.analysis.cashMarginPercent ?? new Decimal("-1e30");
+        case "economicMargin":
+          return row.analysis.economicMarginPercent ?? new Decimal("-1e30");
+      }
+    };
+    return value(b).cmp(value(a));
+  });
+  const cashPlanMargin = planTotals.revenue.gt(0)
+    ? planTotals.profit.div(planTotals.revenue).mul(100)
+    : null;
+  const economicPlanMargin =
+    planTotals.revenue.gt(0) && planTotals.economicMissing === 0
+      ? planTotals.economicProfit.div(planTotals.revenue).mul(100)
+      : null;
+  const averageCashPerHour = planTotals.productionHours.gt(0)
+    ? planTotals.profit.div(planTotals.productionHours)
+    : null;
+  const averageEconomicPerHour =
+    planTotals.productionHours.gt(0) && planTotals.economicMissing === 0
+      ? planTotals.economicProfit.div(planTotals.productionHours)
+      : null;
   const missingPlanInputs = Array.from(
     new Set(selectedPlanRows.flatMap((row) => row.missing)),
   );
-  const planIsComplete =
-    selectedPlanRows.length > 0 && missingPlanInputs.length === 0;
+  const gradeChangeProducts = selectedPlanRows
+    .filter(
+      (row) =>
+        row.scenarioA &&
+        row.scenarioB &&
+        row.scenarioA.grade !== row.scenarioB.grade,
+    )
+    .map(
+      (row) =>
+        `${row.product.sku} (${row.scenarioA!.grade} → ${row.scenarioB!.grade})`,
+    );
   const otherPlanCosts = planTotals.totalCosts
     .minus(planTotals.fees)
     .minus(planTotals.productCosts)
@@ -682,7 +866,7 @@ export function CalculatorWorkspace({
               </div>
             </section>
           )}
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <PlanMetric
               label="Planned units"
               value={String(planTotals.units)}
@@ -692,16 +876,79 @@ export function CalculatorWorkspace({
               value={formatMoney(planTotals.revenue, "USD")}
             />
             <PlanMetric
-              label="Etsy fees + fee VAT"
-              value={formatMoney(planTotals.fees, "USD")}
+              label="Cash profit"
+              value={formatMoney(planTotals.profit, "USD")}
             />
             <PlanMetric
-              label={
-                planIsComplete
-                  ? "Estimated profit after all configured costs"
-                  : "Preliminary remainder — incomplete inputs"
+              label="Economic profit"
+              value={
+                planTotals.economicMissing === 0
+                  ? formatMoney(planTotals.economicProfit, "USD")
+                  : "Economic labour cost not configured"
               }
-              value={`${formatMoney(planTotals.profit, "USD")} · ${formatMoney(planTotals.profit.mul(input.usdTryRate), "TRY")}`}
+            />
+            <PlanMetric
+              label="Cash margin"
+              value={cashPlanMargin ? `${cashPlanMargin.toFixed(1)}%` : "N/A"}
+            />
+            <PlanMetric
+              label="Economic margin"
+              value={
+                economicPlanMargin
+                  ? `${economicPlanMargin.toFixed(1)}%`
+                  : "Not configured"
+              }
+            />
+            <PlanMetric
+              label="Average cash profit / unit"
+              value={
+                planTotals.units
+                  ? formatMoney(planTotals.profit.div(planTotals.units), "USD")
+                  : "N/A"
+              }
+            />
+            <PlanMetric
+              label="Average economic profit / unit"
+              value={
+                planTotals.units && planTotals.economicMissing === 0
+                  ? formatMoney(
+                      planTotals.economicProfit.div(planTotals.units),
+                      "USD",
+                    )
+                  : "Not configured"
+              }
+            />
+            <PlanMetric
+              label="Average cash profit / hour"
+              value={
+                averageCashPerHour
+                  ? formatMoney(averageCashPerHour, "USD")
+                  : "Production time not configured."
+              }
+            />
+            <PlanMetric
+              label="Average economic profit / hour"
+              value={
+                averageEconomicPerHour
+                  ? formatMoney(averageEconomicPerHour, "USD")
+                  : planTotals.economicMissing > 0
+                    ? "Economic labour cost not configured"
+                    : "Production time not configured."
+              }
+            />
+            <PlanMetric
+              label="Products below minimum profit"
+              value={String(planTotals.belowMinimum)}
+            />
+            <PlanMetric
+              label="Products with missing labour/time"
+              value={String(
+                Math.max(planTotals.economicMissing, planTotals.hoursMissing),
+              )}
+            />
+            <PlanMetric
+              label="Grade counts"
+              value={`A ${planTotals.gradeA} · B ${planTotals.gradeB} · C ${planTotals.gradeC} · D ${planTotals.gradeD}`}
             />
           </section>
           {selectedPlanRows.length > 0 && (
@@ -720,6 +967,18 @@ export function CalculatorWorkspace({
                   {formatMoney(planTotals.customsExposure, "USD")} remains
                   visible but is not deducted.
                 </p>
+                <ScenarioMetrics
+                  cash={planTotals.scenarioACash}
+                  economic={planTotals.scenarioAEconomic}
+                  economicMissing={planTotals.economicMissing > 0}
+                  customsDeducted={new Decimal(0)}
+                  revenue={planTotals.revenue}
+                  losses={planTotals.scenarioALosses}
+                  gradeChanges={planTotals.gradeChanges}
+                  difference={planTotals.scenarioACash.minus(
+                    planTotals.scenarioBCash,
+                  )}
+                />
               </div>
               <div className="card p-5">
                 <p className="eyebrow">Scenario B · customs seller-paid</p>
@@ -736,8 +995,26 @@ export function CalculatorWorkspace({
                   Comparison only. This does not infer DDP or who is legally
                   responsible.
                 </p>
+                <ScenarioMetrics
+                  cash={planTotals.scenarioBCash}
+                  economic={planTotals.scenarioBEconomic}
+                  economicMissing={planTotals.economicMissing > 0}
+                  customsDeducted={planTotals.customsExposure}
+                  revenue={planTotals.revenue}
+                  losses={planTotals.scenarioBLosses}
+                  gradeChanges={planTotals.gradeChanges}
+                  difference={planTotals.scenarioBCash.minus(
+                    planTotals.scenarioACash,
+                  )}
+                />
               </div>
             </section>
+          )}
+          {gradeChangeProducts.length > 0 && (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              Products changing profitability grade when seller-paid customs is
+              deducted: {gradeChangeProducts.join(", ")}.
+            </p>
           )}
           {selectedPlanRows.length > 0 && (
             <section className="card overflow-hidden">
@@ -788,6 +1065,14 @@ export function CalculatorWorkspace({
                 <Deduction
                   label="ETGB / export processing"
                   value={planTotals.etgb}
+                  displayValue={
+                    planTotals.etgbUnknown > 0
+                      ? `${formatMoney(planTotals.etgb, "USD")} · ${planTotals.etgbUnknown} product(s) not configured`
+                      : planTotals.etgb.eq(0)
+                        ? "$0.00 · Confirmed included/free"
+                        : undefined
+                  }
+                  missingOverride={planTotals.etgbUnknown > 0}
                   description="Deducted only when a separate ETGB charge is confirmed or manually enabled. Unknown never means zero."
                   source="Latest effective ETGB cost record"
                   href="/customs-etgb"
@@ -839,21 +1124,51 @@ export function CalculatorWorkspace({
             </section>
           )}
           <section className="card overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b p-5">
+              <div>
+                <h3 className="font-semibold">Profitability by product</h3>
+                <p className="mt-1 text-xs text-stone-500">
+                  Cash and economic views use the same canonical calculation.
+                </p>
+              </div>
+              <label className="text-xs text-stone-500">
+                Sort by
+                <select
+                  className="field mt-1 py-2"
+                  value={profitSort}
+                  onChange={(event) =>
+                    setProfitSort(event.target.value as typeof profitSort)
+                  }
+                >
+                  <option value="cashProfit">Cash profit / unit</option>
+                  <option value="economicProfit">Economic profit / unit</option>
+                  <option value="cashPerHour">Cash profit / hour</option>
+                  <option value="economicPerHour">
+                    Economic profit / hour
+                  </option>
+                  <option value="cashMargin">Cash margin</option>
+                  <option value="economicMargin">Economic margin</option>
+                </select>
+              </label>
+            </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-left text-sm">
+              <table className="w-full min-w-[1400px] text-left text-sm">
                 <thead className="bg-stone-50 text-xs text-stone-400">
                   <tr>
                     <th className="px-5 py-3">Product</th>
                     <th>State / available</th>
                     <th>Planned quantity</th>
                     <th>Buyer price</th>
-                    <th>Profit per unit</th>
+                    <th>Cash / economic profit</th>
+                    <th>Margins</th>
+                    <th>Production efficiency</th>
+                    <th>Grade / risks</th>
                     <th>Planned profit</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {planRows.map(
-                    ({ product, quantity, calculation, missing }) => (
+                  {sortedPlanRows.map(
+                    ({ product, quantity, calculation, analysis, missing }) => (
                       <tr className="border-t" key={product.id}>
                         <td className="px-5 py-4">
                           <strong className="block">{product.sku}</strong>
@@ -893,9 +1208,21 @@ export function CalculatorWorkspace({
                           {new Decimal(product.discountedPrice).toFixed(2)}
                         </td>
                         <td>
-                          {calculation
-                            ? `${missing.length ? "Preliminary " : ""}${formatMoney(calculation.totals.estimatedAfterReserveProfit, "USD")}`
-                            : "USD only"}
+                          {analysis ? (
+                            <>
+                              <strong>
+                                {formatMoney(analysis.cashProfitPerUnit, "USD")}{" "}
+                                cash
+                              </strong>
+                              <span className="block text-xs text-stone-500">
+                                {analysis.economicProfitPerUnit
+                                  ? `${formatMoney(analysis.economicProfitPerUnit, "USD")} economic`
+                                  : "Economic labour cost not configured"}
+                              </span>
+                            </>
+                          ) : (
+                            "USD only"
+                          )}
                           {calculation && (
                             <span className="mt-1 block max-w-52 text-[11px] leading-4 text-stone-500">
                               Materials{" "}
@@ -920,6 +1247,73 @@ export function CalculatorWorkspace({
                             </span>
                           )}
                         </td>
+                        <td>
+                          {analysis ? (
+                            <>
+                              <span>
+                                {analysis.cashMarginPercent
+                                  ? `${analysis.cashMarginPercent.toFixed(1)}% cash`
+                                  : "N/A"}
+                              </span>
+                              <span className="block text-xs text-stone-500">
+                                {analysis.economicMarginPercent
+                                  ? `${analysis.economicMarginPercent.toFixed(1)}% economic`
+                                  : "Not configured"}
+                              </span>
+                            </>
+                          ) : (
+                            "N/A"
+                          )}
+                        </td>
+                        <td>
+                          {analysis ? (
+                            <>
+                              <span>
+                                {analysis.productionHoursPerUnit
+                                  ? `${analysis.productionHoursPerUnit.toFixed(2)} h/unit`
+                                  : "Production time not configured."}
+                              </span>
+                              <span className="block text-xs text-stone-500">
+                                {analysis.cashProfitPerHour
+                                  ? `${formatMoney(analysis.cashProfitPerHour, "USD")}/h cash`
+                                  : "N/A"}{" "}
+                                ·{" "}
+                                {analysis.economicProfitPerHour
+                                  ? `${formatMoney(analysis.economicProfitPerHour, "USD")}/h economic`
+                                  : "not configured"}
+                              </span>
+                              <span className="block text-[11px] text-stone-400">
+                                Planned:{" "}
+                                {analysis.plannedProductionHours?.toFixed(2) ??
+                                  "N/A"}{" "}
+                                hours
+                              </span>
+                            </>
+                          ) : (
+                            "N/A"
+                          )}
+                        </td>
+                        <td>
+                          {analysis ? (
+                            <>
+                              <span className="pill border-jade/30 bg-jade/5 text-jade">
+                                Grade {analysis.grade}
+                              </span>
+                              <div className="mt-1 flex max-w-56 flex-wrap gap-1">
+                                {analysis.riskFlags.map((flag) => (
+                                  <span
+                                    className="pill border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-900"
+                                    key={flag}
+                                  >
+                                    {flag.replaceAll("_", " ")}
+                                  </span>
+                                ))}
+                              </div>
+                            </>
+                          ) : (
+                            "N/A"
+                          )}
+                        </td>
                         <td className="font-semibold">
                           {calculation
                             ? formatMoney(
@@ -937,6 +1331,12 @@ export function CalculatorWorkspace({
               </table>
             </div>
           </section>
+          <ProfitabilitySimulator
+            products={products.filter((product) => product.currency === "USD")}
+            baseInput={calculationInput}
+            thresholds={profitabilityThresholds}
+            targetsSource={profitabilityTargetsSource}
+          />
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
             <AlertTriangle className="mr-1.5 inline" size={14} />
             This is a planning scenario, not a filed tax calculation. Each row
@@ -979,25 +1379,94 @@ function PlanMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ScenarioMetrics({
+  cash,
+  economic,
+  economicMissing,
+  customsDeducted,
+  revenue,
+  losses,
+  gradeChanges,
+  difference,
+}: {
+  cash: Decimal;
+  economic: Decimal;
+  economicMissing: boolean;
+  customsDeducted: Decimal;
+  revenue: Decimal;
+  losses: number;
+  gradeChanges: number;
+  difference: Decimal;
+}) {
+  const cashMargin = revenue.gt(0) ? cash.div(revenue).mul(100) : null;
+  const economicMargin =
+    revenue.gt(0) && !economicMissing ? economic.div(revenue).mul(100) : null;
+  return (
+    <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">
+      <div>
+        <dt className="text-stone-400">Cash profit</dt>
+        <dd className="font-semibold">{formatMoney(cash, "USD")}</dd>
+      </div>
+      <div>
+        <dt className="text-stone-400">Economic profit</dt>
+        <dd className="font-semibold">
+          {economicMissing ? "Not configured" : formatMoney(economic, "USD")}
+        </dd>
+      </div>
+      <div>
+        <dt className="text-stone-400">Customs deducted</dt>
+        <dd className="font-semibold">
+          {customsDeducted.eq(0)
+            ? "Not deducted"
+            : formatMoney(customsDeducted, "USD")}
+        </dd>
+      </div>
+      <div>
+        <dt className="text-stone-400">Margins</dt>
+        <dd>
+          {cashMargin ? `${cashMargin.toFixed(1)}%` : "N/A"} cash ·{" "}
+          {economicMargin ? `${economicMargin.toFixed(1)}%` : "N/A"} economic
+        </dd>
+      </div>
+      <div>
+        <dt className="text-stone-400">Difference</dt>
+        <dd>{formatMoney(difference, "USD")}</dd>
+      </div>
+      <div>
+        <dt className="text-stone-400">Loss-making products</dt>
+        <dd>{losses}</dd>
+      </div>
+      <div>
+        <dt className="text-stone-400">Products changing grade</dt>
+        <dd>{gradeChanges}</dd>
+      </div>
+    </dl>
+  );
+}
+
 function Deduction({
   label,
   value,
+  displayValue,
+  missingOverride,
   description,
   source,
   href,
 }: {
   label: string;
   value: Decimal;
+  displayValue?: string;
+  missingOverride?: boolean;
   description?: string;
   source?: string;
   href?: string;
 }) {
-  const missing = value.eq(0);
+  const missing = missingOverride ?? value.eq(0);
   return (
     <div className="bg-white p-5">
       <p className="text-xs text-stone-500">{label}</p>
       <p className={`mt-2 font-semibold ${missing ? "text-red-700" : ""}`}>
-        {formatMoney(value, "USD")}
+        {displayValue ?? formatMoney(value, "USD")}
       </p>
       {missing && (
         <p className="mt-1 text-[11px] text-red-600">Not configured</p>

@@ -3,6 +3,7 @@ import { CalculatorWorkspace } from "@/components/calculator-workspace";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { defaultCalculatorInput } from "@/lib/domain/defaults";
 import { applyFeeProfile } from "@/lib/domain/fee-profile";
+import { defaultProfitabilityThresholds } from "@/lib/domain/profitability";
 import { getWeeklyUsdTryRate } from "@/lib/exchange-rate";
 import { resolveListingPricing } from "@/lib/etsy/pricing";
 import { prisma } from "@/lib/prisma";
@@ -20,6 +21,7 @@ export default async function CalculatorPage() {
     customsQuotes,
     feeProfile,
     assumptionProfile,
+    makerRole,
     etgbCosts,
     externalComparison,
     planningTaxRule,
@@ -120,6 +122,16 @@ export default async function CalculatorPage() {
       },
       orderBy: { effectiveFrom: "desc" },
     }),
+    prisma.businessPersonRole.findFirst({
+      where: {
+        role: { in: ["MAKER", "FAMILY_CONTRIBUTOR"] },
+        economicHourlyRateTry: { not: null },
+        effectiveFrom: { lte: now },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
+      },
+      include: { person: true },
+      orderBy: { effectiveFrom: "desc" },
+    }),
     prisma.etgbCostRecord.findMany({
       where: {
         effectiveFrom: { lte: now },
@@ -209,6 +221,24 @@ export default async function CalculatorPage() {
         materialCostTry: materialWithWastage.toString(),
         laborHours: cost?.laborHours.toString() ?? "0",
         laborHourlyRateTry: cost?.laborHourlyRateTry.toString() ?? "0",
+        economicHourlyRateTry:
+          cost?.economicHourlyRateTry?.toString() ??
+          makerRole?.economicHourlyRateTry?.toString() ??
+          assumptionProfile?.globalEconomicHourlyRateTry?.toString() ??
+          null,
+        economicHourlyRateSource: cost?.economicHourlyRateTry
+          ? `Product cost version effective ${cost.effectiveFrom.toLocaleDateString("en-GB")}`
+          : makerRole?.economicHourlyRateTry
+            ? `Maker / family role: ${makerRole.person.displayName ?? makerRole.person.fullName}`
+            : assumptionProfile?.globalEconomicHourlyRateTry
+              ? `Global profitability setting: ${assumptionProfile.name}`
+              : "Not configured",
+        productionHoursSource: cost
+          ? `Product cost version effective ${cost.effectiveFrom.toLocaleDateString("en-GB")}`
+          : "Not configured",
+        paidLaborRateSource: cost
+          ? `Product cost version effective ${cost.effectiveFrom.toLocaleDateString("en-GB")}`
+          : "Not configured",
         packagingCostTry: cost?.packagingCostTry.toString() ?? "0",
         additionalDirectCostTry: otherDirectCosts.toString(),
         internationalShippingUsd: productShipping
@@ -243,6 +273,7 @@ export default async function CalculatorPage() {
           productEtgb?.deductFromProfit ??
           assumptionProfile?.includeEtgbInSellerProfit ??
           false,
+        etgbStatus: productEtgb?.status ?? "UNKNOWN_PENDING_CONFIRMATION",
       };
     });
   });
@@ -276,6 +307,45 @@ export default async function CalculatorPage() {
     <CalculatorWorkspace
       products={presets}
       exchangeRate={exchangeRate}
+      profitabilityThresholds={
+        assumptionProfile
+          ? {
+              gradeAProfitUsd: assumptionProfile.gradeAProfitUsd.toString(),
+              gradeAMarginPercent:
+                assumptionProfile.gradeAMarginPercent.toString(),
+              gradeBProfitUsd: assumptionProfile.gradeBProfitUsd.toString(),
+              gradeBMarginPercent:
+                assumptionProfile.gradeBMarginPercent.toString(),
+              gradeCProfitUsd: assumptionProfile.gradeCProfitUsd.toString(),
+              gradeCMarginPercent:
+                assumptionProfile.gradeCMarginPercent.toString(),
+              criticalMarginPercent:
+                assumptionProfile.criticalMarginPercent.toString(),
+              lowProfitUsd: assumptionProfile.lowProfitUsd.toString(),
+              shippingHeavyPercent:
+                assumptionProfile.shippingHeavyPercent.toString(),
+              overheadHeavyPercent:
+                assumptionProfile.overheadHeavyPercent.toString(),
+              minimumCashProfitUsd:
+                assumptionProfile.minimumCashProfitUsd.toString(),
+              minimumEconomicProfitUsd:
+                assumptionProfile.minimumEconomicProfitUsd.toString(),
+              minimumCashMarginPercent:
+                assumptionProfile.minimumCashMarginPercent.toString(),
+              minimumEconomicMarginPercent:
+                assumptionProfile.minimumEconomicMarginPercent.toString(),
+              minimumCashProfitPerHourUsd:
+                assumptionProfile.minimumCashProfitPerHourUsd.toString(),
+              minimumEconomicProfitPerHourUsd:
+                assumptionProfile.minimumEconomicProfitPerHourUsd.toString(),
+            }
+          : defaultProfitabilityThresholds
+      }
+      profitabilityTargetsSource={
+        assumptionProfile
+          ? `Effective profitability profile: ${assumptionProfile.name}`
+          : "Built-in editable defaults; save a profitability profile in Settings"
+      }
       externalComparison={
         externalComparison
           ? {

@@ -114,6 +114,14 @@ export default async function BusinessPage() {
           </select>
           <input
             className="field"
+            name="economicHourlyRateTry"
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="Economic hourly TRY (maker/family, optional)"
+          />
+          <input
+            className="field"
             name="notes"
             placeholder="Notes (optional)"
           />

@@ -202,6 +202,110 @@ export default async function SettingsPage() {
               "Editable planning starter; not an actual order."
             }
           />
+          <div className="md:col-span-4 mt-2 border-t pt-4">
+            <h3 className="font-semibold">Profitability intelligence</h3>
+            <p className="mt-1 text-xs text-stone-500">
+              Global economic-labour fallback, minimum targets, grade
+              boundaries, and risk thresholds. A product cost version-specific
+              rate overrides the global rate.
+            </p>
+          </div>
+          {[
+            [
+              "globalEconomicHourlyRateTry",
+              "Global economic hourly TRY",
+              assumption?.globalEconomicHourlyRateTry?.toString() ?? "",
+            ],
+            [
+              "minimumCashProfitUsd",
+              "Minimum cash profit USD",
+              assumption?.minimumCashProfitUsd.toString() ?? "15",
+            ],
+            [
+              "minimumEconomicProfitUsd",
+              "Minimum economic profit USD",
+              assumption?.minimumEconomicProfitUsd.toString() ?? "15",
+            ],
+            [
+              "minimumCashMarginPercent",
+              "Minimum cash margin %",
+              assumption?.minimumCashMarginPercent.toString() ?? "10",
+            ],
+            [
+              "minimumEconomicMarginPercent",
+              "Minimum economic margin %",
+              assumption?.minimumEconomicMarginPercent.toString() ?? "10",
+            ],
+            [
+              "minimumCashProfitPerHourUsd",
+              "Minimum cash profit/hour USD",
+              assumption?.minimumCashProfitPerHourUsd.toString() ?? "10",
+            ],
+            [
+              "minimumEconomicProfitPerHourUsd",
+              "Minimum economic profit/hour USD",
+              assumption?.minimumEconomicProfitPerHourUsd.toString() ?? "10",
+            ],
+            [
+              "gradeAProfitUsd",
+              "Grade A profit USD",
+              assumption?.gradeAProfitUsd.toString() ?? "50",
+            ],
+            [
+              "gradeAMarginPercent",
+              "Grade A margin %",
+              assumption?.gradeAMarginPercent.toString() ?? "25",
+            ],
+            [
+              "gradeBProfitUsd",
+              "Grade B profit USD",
+              assumption?.gradeBProfitUsd.toString() ?? "30",
+            ],
+            [
+              "gradeBMarginPercent",
+              "Grade B margin %",
+              assumption?.gradeBMarginPercent.toString() ?? "15",
+            ],
+            [
+              "gradeCProfitUsd",
+              "Grade C profit USD",
+              assumption?.gradeCProfitUsd.toString() ?? "20",
+            ],
+            [
+              "gradeCMarginPercent",
+              "Grade C margin %",
+              assumption?.gradeCMarginPercent.toString() ?? "10",
+            ],
+            [
+              "criticalMarginPercent",
+              "Critical margin below %",
+              assumption?.criticalMarginPercent.toString() ?? "5",
+            ],
+            [
+              "lowProfitUsd",
+              "Low profit below USD",
+              assumption?.lowProfitUsd.toString() ?? "15",
+            ],
+            [
+              "shippingHeavyPercent",
+              "Shipping-heavy above %",
+              assumption?.shippingHeavyPercent.toString() ?? "25",
+            ],
+            [
+              "overheadHeavyPercent",
+              "Overhead-heavy above %",
+              assumption?.overheadHeavyPercent.toString() ?? "20",
+            ],
+          ].map(([name, label, value]) => (
+            <Field
+              key={name}
+              name={name}
+              label={label}
+              type="number"
+              value={value}
+              required={name !== "globalEconomicHourlyRateTry"}
+            />
+          ))}
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"

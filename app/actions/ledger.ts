@@ -29,6 +29,11 @@ const optionalText = z
   .trim()
   .transform((v) => v || undefined);
 const number = z.coerce.number().finite();
+const nonNegativeNumber = z.coerce.number().finite().min(0);
+const optionalNonNegativeNumber = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  nonNegativeNumber.optional(),
+);
 const date = z.coerce.date();
 const checkbox = z
   .union([z.literal("on"), z.literal("true"), z.literal(true)])
@@ -458,6 +463,23 @@ export async function createCostAssumptionProfileAction(formData: FormData) {
       includeEtgbInSellerProfit: checkbox,
       etsyPlusMonthlyTry: number,
       companyPackageMonthlyTry: number,
+      globalEconomicHourlyRateTry: optionalNonNegativeNumber,
+      minimumCashProfitUsd: nonNegativeNumber,
+      minimumEconomicProfitUsd: nonNegativeNumber,
+      minimumCashMarginPercent: nonNegativeNumber,
+      minimumEconomicMarginPercent: nonNegativeNumber,
+      minimumCashProfitPerHourUsd: nonNegativeNumber,
+      minimumEconomicProfitPerHourUsd: nonNegativeNumber,
+      gradeAProfitUsd: nonNegativeNumber,
+      gradeAMarginPercent: nonNegativeNumber,
+      gradeBProfitUsd: nonNegativeNumber,
+      gradeBMarginPercent: nonNegativeNumber,
+      gradeCProfitUsd: nonNegativeNumber,
+      gradeCMarginPercent: nonNegativeNumber,
+      criticalMarginPercent: nonNegativeNumber,
+      lowProfitUsd: nonNegativeNumber,
+      shippingHeavyPercent: nonNegativeNumber,
+      overheadHeavyPercent: nonNegativeNumber,
       source: text,
       sourceDate: date,
       effectiveFrom: date,
@@ -1437,6 +1459,7 @@ export async function createProductCostAction(formData: FormData) {
       materialCostTry: number,
       laborHours: number,
       laborHourlyRateTry: number,
+      economicHourlyRateTry: optionalNonNegativeNumber,
       packagingCostTry: number,
       additionalDirectCostTry: number,
       wastageRate: number,
@@ -1471,6 +1494,7 @@ export async function updateProductCostAction(formData: FormData) {
       materialCostTry: number,
       laborHours: number,
       laborHourlyRateTry: number,
+      economicHourlyRateTry: optionalNonNegativeNumber,
       packagingCostTry: number,
       additionalDirectCostTry: number,
       wastageRate: number,
@@ -1588,6 +1612,7 @@ export async function duplicateProductCostSetupAction(formData: FormData) {
         materialCostTry: source.materialCostTry,
         laborHours: source.laborHours,
         laborHourlyRateTry: source.laborHourlyRateTry,
+        economicHourlyRateTry: source.economicHourlyRateTry,
         packagingCostTry: source.packagingCostTry,
         additionalDirectCostTry: source.additionalDirectCostTry,
         wastageRate: source.wastageRate,
