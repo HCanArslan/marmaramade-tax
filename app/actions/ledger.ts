@@ -515,32 +515,39 @@ export async function reconcileShippingQuoteAction(formData: FormData) {
 export async function duplicateShippingQuoteAction(formData: FormData) {
   const actor = await adminActor("/shipping");
   const id = text.parse(formData.get("id"));
-  const source = await prisma.shippingQuote.findUniqueOrThrow({
-    where: { id },
-  });
-  const { id: _id, createdAt: _c, updatedAt: _u, ...data } = source;
-  void _id;
-  void _c;
-  void _u;
-  const row = await prisma.shippingQuote.create({
-    data: {
-      ...data,
-      quoteDate: new Date(),
-      expirationDate: null,
-      planningDefault: false,
-      activeExpected: false,
-      notes: `Duplicated from ${id}. ${data.notes || ""}`,
-    },
-  });
-  await prisma.auditLog.create({
-    data: {
-      entityType: "ShippingQuote",
-      entityId: row.id,
-      action: "DUPLICATED",
-      actor,
-    },
+  const row = await prisma.$transaction(async (tx) => {
+    const source = await tx.shippingQuote.findUniqueOrThrow({ where: { id } });
+    const { id: _id, createdAt: _c, updatedAt: _u, ...data } = source;
+    void _id;
+    void _c;
+    void _u;
+    const duplicate = await tx.shippingQuote.create({
+      data: {
+        ...data,
+        quoteDate: new Date(),
+        expirationDate: null,
+        planningDefault: false,
+        activeExpected: false,
+        estimateStatus: "ESTIMATE",
+        actualShippingCost: null,
+        actualCostCurrency: null,
+        reconciledAt: null,
+        notes: `Duplicated from ${id}. ${data.notes || ""}`,
+      },
+    });
+    await tx.auditLog.create({
+      data: {
+        entityType: "ShippingQuote",
+        entityId: duplicate.id,
+        action: "DUPLICATED",
+        actor,
+        beforeJson: JSON.stringify({ sourceQuoteId: id }),
+      },
+    });
+    return duplicate;
   });
   revalidatePath("/shipping");
+  redirect(`/shipping?duplicated=${row.id}`);
 }
 export async function archiveShippingQuoteAction(formData: FormData) {
   const actor = await adminActor("/shipping");
@@ -552,6 +559,7 @@ export async function archiveShippingQuoteAction(formData: FormData) {
         expirationDate: new Date(),
         planningDefault: false,
         activeExpected: false,
+        estimateStatus: "ARCHIVED",
       },
     }),
     prisma.auditLog.create({
@@ -565,6 +573,41 @@ export async function archiveShippingQuoteAction(formData: FormData) {
   ]);
   revalidatePath("/shipping");
   revalidatePath("/calculator");
+  redirect(`/shipping?archived=${id}`);
+}
+
+export async function deleteShippingQuoteAction(formData: FormData) {
+  const actor = await adminActor("/shipping");
+  const id = text.parse(formData.get("id"));
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.shippingQuote.findUniqueOrThrow({
+      where: { id },
+      include: {
+        _count: {
+          select: { orders: true, documents: true },
+        },
+      },
+    });
+    const references = before._count.orders + before._count.documents;
+    if (references > 0) {
+      throw new Error(
+        "This shipping quote is linked to an order or document and cannot be deleted. Archive it instead.",
+      );
+    }
+    await tx.shippingQuote.delete({ where: { id } });
+    await tx.auditLog.create({
+      data: {
+        entityType: "ShippingQuote",
+        entityId: id,
+        action: "DELETED",
+        actor,
+        beforeJson: JSON.stringify(before),
+      },
+    });
+  });
+  revalidatePath("/shipping");
+  revalidatePath("/calculator");
+  redirect(`/shipping?deleted=${id}`);
 }
 
 export async function setPlanningDefaultShippingQuoteAction(

@@ -177,6 +177,27 @@ describe("planning usability", () => {
     expect(actions).toContain("Archive it instead");
   });
 
+  it("duplicates, archives, and safely deletes shipping quotes", async () => {
+    const [shipping, actions] = await Promise.all([
+      source("app/shipping/page.tsx"),
+      source("app/actions/ledger.ts"),
+    ]);
+    expect(shipping).toContain("duplicateShippingQuoteAction");
+    expect(shipping).toContain("archiveShippingQuoteAction");
+    expect(shipping).toContain("deleteShippingQuoteAction");
+    expect(shipping).toContain('q.estimateStatus === "ARCHIVED"');
+    expect(shipping).toContain("Permanently delete this unused quote");
+    expect(shipping).toContain("Linked records protect this quote");
+    expect(actions).toContain("deleteShippingQuoteAction");
+    expect(actions).toContain('estimateStatus: "ARCHIVED"');
+    expect(actions).toContain("actualShippingCost: null");
+    expect(actions).toContain("documents: true");
+    expect(actions).toContain(
+      "This shipping quote is linked to an order or document",
+    );
+    expect(actions).toContain('action: "DELETED"');
+  });
+
   it("connects saved tax planning rules to Calculator without mixing filed tax", async () => {
     const [taxes, actions, calculatorPage, migration] = await Promise.all([
       source("app/taxes/page.tsx"),

@@ -1,6 +1,7 @@
 import {
   archiveShippingQuoteAction,
   createShippingQuoteAction,
+  deleteShippingQuoteAction,
   duplicateShippingQuoteAction,
   reconcileShippingQuoteAction,
   setPlanningDefaultShippingQuoteAction,
@@ -8,15 +9,23 @@ import {
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { prisma } from "@/lib/prisma";
 
-export default async function ShippingPage() {
+export default async function ShippingPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   await requireAdmin({ redirectTo: "/shipping" });
-  const [products, quotes] = await Promise.all([
+  const [params, products, quotes] = await Promise.all([
+    searchParams,
     prisma.product.findMany({
       where: { active: true },
       orderBy: { sku: "asc" },
     }),
     prisma.shippingQuote.findMany({
-      include: { product: true },
+      include: {
+        product: true,
+        _count: { select: { orders: true, documents: true } },
+      },
       orderBy: { quoteDate: "desc" },
       take: 100,
     }),
@@ -33,6 +42,15 @@ export default async function ShippingPage() {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <Header />
+      {(params.duplicated || params.archived || params.deleted) && (
+        <p className="rounded-xl border border-jade/20 bg-jade/5 px-4 py-3 text-sm text-jade">
+          {params.duplicated
+            ? "Shipping quote duplicated. The new copy is ready to edit or use."
+            : params.archived
+              ? "Shipping quote archived and removed from planning defaults."
+              : "Unused shipping quote permanently deleted."}
+        </p>
+      )}
       <section className="card p-5">
         <h2 className="font-semibold">New effective-dated quote</h2>
         <p className="mt-1 text-sm text-stone-500">
@@ -138,112 +156,138 @@ export default async function ShippingPage() {
             </tr>
           </thead>
           <tbody>
-            {quotes.map((q) => (
-              <tr className="border-b" key={q.id}>
-                <td className="p-4 font-medium">
-                  {q.product?.sku ?? "Legacy unassigned"}
-                  <br />
-                  <span className="text-xs font-normal text-stone-500">
-                    {q.carrier} · {q.serviceName}
-                  </span>
-                </td>
-                <td>
-                  {q.originCountry} → {q.destinationCountry}
-                </td>
-                <td>
-                  {q.packageLengthCm.toFixed(1)} × {q.packageWidthCm.toFixed(1)}{" "}
-                  × {q.packageHeightCm.toFixed(1)} cm
-                  <br />
-                  <span className="text-xs text-stone-500">
-                    actual {q.actualWeightKg.toFixed(2)} kg · billable{" "}
-                    {q.billableWeightKg.toFixed(2)} kg
-                  </span>
-                </td>
-                <td>
-                  {q.shippingCost.toFixed(2)} {q.shippingCurrency}
-                </td>
-                <td>
-                  {q.quoteDate.toLocaleDateString("en-GB")} /{" "}
-                  {q.expirationDate?.toLocaleDateString("en-GB") || "—"}
-                </td>
-                <td>
-                  <span className="pill">
-                    {q.expirationDate && q.expirationDate < now
-                      ? "Expired"
-                      : q.planningDefault
-                        ? "Planning default"
-                        : q.id === automaticFallback?.id
-                          ? "Automatic Calculator fallback"
-                          : "Saved quote"}
-                  </span>
-                </td>
-                <td>
-                  {q.actualShippingCost === null ? (
-                    <form
-                      action={reconcileShippingQuoteAction}
-                      className="flex min-w-56 gap-1"
-                    >
-                      <input type="hidden" name="id" value={q.id} />
-                      <input
-                        className="field w-24"
-                        name="actualShippingCost"
-                        type="number"
-                        step="0.01"
-                        placeholder="Actual"
-                        aria-label="Actual shipping cost"
-                        required
-                      />
-                      <input
-                        className="field w-16"
-                        name="actualCostCurrency"
-                        defaultValue={q.shippingCurrency}
-                        aria-label="Actual shipping currency"
-                        required
-                      />
-                      <button className="rounded border px-2 text-xs">
-                        Reconcile
-                      </button>
-                    </form>
-                  ) : (
-                    <span className="text-xs">
-                      {q.actualShippingCost.toFixed(2)} {q.actualCostCurrency}
-                      {q.actualCostCurrency === q.shippingCurrency && (
-                        <>
-                          {" "}
-                          · variance{" "}
-                          {q.actualShippingCost.sub(q.shippingCost).toFixed(2)}
-                        </>
-                      )}
+            {quotes.map((q) => {
+              const archived = q.estimateStatus === "ARCHIVED";
+              const deleteBlocked = q._count.orders + q._count.documents > 0;
+              return (
+                <tr className="border-b" key={q.id}>
+                  <td className="p-4 font-medium">
+                    {q.product?.sku ?? "Legacy unassigned"}
+                    <br />
+                    <span className="text-xs font-normal text-stone-500">
+                      {q.carrier} · {q.serviceName}
                     </span>
-                  )}
-                </td>
-                <td>
-                  <div className="flex flex-wrap gap-1">
-                    {!q.planningDefault &&
-                      (!q.expirationDate || q.expirationDate >= now) && (
-                        <form action={setPlanningDefaultShippingQuoteAction}>
-                          <input type="hidden" name="id" value={q.id} />
-                          <button className="rounded border border-jade px-2 py-1 text-xs text-jade">
-                            Use for planning
-                          </button>
-                        </form>
-                      )}
-                    <form action={duplicateShippingQuoteAction}>
-                      <input type="hidden" name="id" value={q.id} />
-                      <button className="rounded border px-2 py-1 text-xs">
-                        Duplicate
-                      </button>
-                    </form>
-                    <form action={archiveShippingQuoteAction}>
-                      <input type="hidden" name="id" value={q.id} />
-                      <button className="rounded border px-2 py-1 text-xs">
-                        Archive
-                      </button>
-                    </form>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td>
+                    {q.originCountry} → {q.destinationCountry}
+                  </td>
+                  <td>
+                    {q.packageLengthCm.toFixed(1)} ×{" "}
+                    {q.packageWidthCm.toFixed(1)} ×{" "}
+                    {q.packageHeightCm.toFixed(1)} cm
+                    <br />
+                    <span className="text-xs text-stone-500">
+                      actual {q.actualWeightKg.toFixed(2)} kg · billable{" "}
+                      {q.billableWeightKg.toFixed(2)} kg
+                    </span>
+                  </td>
+                  <td>
+                    {q.shippingCost.toFixed(2)} {q.shippingCurrency}
+                  </td>
+                  <td>
+                    {q.quoteDate.toLocaleDateString("en-GB")} /{" "}
+                    {q.expirationDate?.toLocaleDateString("en-GB") || "—"}
+                  </td>
+                  <td>
+                    <span className="pill">
+                      {archived
+                        ? "Archived"
+                        : q.expirationDate && q.expirationDate < now
+                          ? "Expired"
+                          : q.planningDefault
+                            ? "Planning default"
+                            : q.id === automaticFallback?.id
+                              ? "Automatic Calculator fallback"
+                              : "Saved quote"}
+                    </span>
+                  </td>
+                  <td>
+                    {q.actualShippingCost === null ? (
+                      <form
+                        action={reconcileShippingQuoteAction}
+                        className="flex min-w-56 gap-1"
+                      >
+                        <input type="hidden" name="id" value={q.id} />
+                        <input
+                          className="field w-24"
+                          name="actualShippingCost"
+                          type="number"
+                          step="0.01"
+                          placeholder="Actual"
+                          aria-label="Actual shipping cost"
+                          required
+                        />
+                        <input
+                          className="field w-16"
+                          name="actualCostCurrency"
+                          defaultValue={q.shippingCurrency}
+                          aria-label="Actual shipping currency"
+                          required
+                        />
+                        <button className="rounded border px-2 text-xs">
+                          Reconcile
+                        </button>
+                      </form>
+                    ) : (
+                      <span className="text-xs">
+                        {q.actualShippingCost.toFixed(2)} {q.actualCostCurrency}
+                        {q.actualCostCurrency === q.shippingCurrency && (
+                          <>
+                            {" "}
+                            · variance{" "}
+                            {q.actualShippingCost
+                              .sub(q.shippingCost)
+                              .toFixed(2)}
+                          </>
+                        )}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    <div className="flex flex-wrap gap-1">
+                      {!q.planningDefault &&
+                        (!q.expirationDate || q.expirationDate >= now) && (
+                          <form action={setPlanningDefaultShippingQuoteAction}>
+                            <input type="hidden" name="id" value={q.id} />
+                            <button className="rounded border border-jade px-2 py-1 text-xs text-jade">
+                              Use for planning
+                            </button>
+                          </form>
+                        )}
+                      <form action={duplicateShippingQuoteAction}>
+                        <input type="hidden" name="id" value={q.id} />
+                        <button className="rounded border px-2 py-1 text-xs">
+                          Duplicate
+                        </button>
+                      </form>
+                      <form action={archiveShippingQuoteAction}>
+                        <input type="hidden" name="id" value={q.id} />
+                        <button
+                          className="rounded border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-40"
+                          disabled={archived}
+                        >
+                          {archived ? "Archived" : "Archive"}
+                        </button>
+                      </form>
+                      <form action={deleteShippingQuoteAction}>
+                        <input type="hidden" name="id" value={q.id} />
+                        <button
+                          className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                          disabled={deleteBlocked}
+                          title={
+                            deleteBlocked
+                              ? "Linked records protect this quote; archive it instead."
+                              : "Permanently delete this unused quote"
+                          }
+                        >
+                          Delete
+                        </button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         {!quotes.length && (
