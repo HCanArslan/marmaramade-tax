@@ -21,6 +21,7 @@ import { defaultCalculatorInput } from "@/lib/domain/defaults";
 import { calculateProductCost } from "@/lib/domain/product-cost";
 import { optimizeProductMix } from "@/lib/goals/planner";
 import Decimal from "decimal.js";
+import { monthStartUtc } from "@/lib/domain/overhead";
 import type { Prisma } from "@/generated/prisma/client";
 
 const text = z.string().trim().min(1);
@@ -2278,13 +2279,13 @@ export async function saveMonthlyOverheadAction(formData: FormData) {
   const v = z
     .object({
       month: date,
-      accountantTry: number,
-      socialSecurityTry: number,
-      softwareTry: number,
-      bankingTry: number,
-      officeTry: number,
-      otherTry: number,
-      etsyPlusTry: number,
+      accountantTry: nonNegativeNumber,
+      socialSecurityTry: nonNegativeNumber,
+      softwareTry: nonNegativeNumber,
+      bankingTry: nonNegativeNumber,
+      officeTry: nonNegativeNumber,
+      otherTry: nonNegativeNumber,
+      etsyPlusTry: nonNegativeNumber,
       allocationMethod: z.enum([
         "EXPECTED_SALES",
         "ACTUAL_SALES",
@@ -2294,7 +2295,7 @@ export async function saveMonthlyOverheadAction(formData: FormData) {
       ]),
       expectedSales: z.coerce.number().int().positive(),
       actualSales: z.coerce.number().int().nonnegative(),
-      manualPerOrderTry: number,
+      manualPerOrderTry: nonNegativeNumber,
       notes: optionalText,
     })
     .parse(Object.fromEntries(formData));
@@ -2318,6 +2319,29 @@ export async function saveMonthlyOverheadAction(formData: FormData) {
       action: "UPSERTED",
       actor,
     },
+  });
+  revalidatePath("/business");
+  revalidatePath("/calculator");
+  revalidatePath("/");
+}
+
+export async function deleteMonthlyOverheadAction(formData: FormData) {
+  const actor = await adminActor("/business");
+  const id = text.parse(formData.get("id"));
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.monthlyOverhead.findUniqueOrThrow({
+      where: { id },
+    });
+    await tx.monthlyOverhead.delete({ where: { id } });
+    await tx.auditLog.create({
+      data: {
+        entityType: "MonthlyOverhead",
+        entityId: id,
+        action: "DELETED",
+        actor,
+        beforeJson: JSON.stringify(before),
+      },
+    });
   });
   revalidatePath("/business");
   revalidatePath("/calculator");
@@ -2357,7 +2381,10 @@ export async function runInventoryGoalAction(formData: FormData) {
       prisma.legalOperatingProfile.findUnique({
         where: { id: goal.operatingProfileId },
       }),
-      prisma.monthlyOverhead.findFirst({ orderBy: { month: "desc" } }),
+      prisma.monthlyOverhead.findFirst({
+        where: { month: { lte: monthStartUtc(new Date()) } },
+        orderBy: { month: "desc" },
+      }),
       prisma.shippingQuote.findFirst({
         where: { planningDefault: true, shippingCurrency: "USD" },
         orderBy: { quoteDate: "desc" },

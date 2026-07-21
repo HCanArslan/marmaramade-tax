@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth/require-admin";
 import { defaultCalculatorInput } from "@/lib/domain/defaults";
 import { applyFeeProfile } from "@/lib/domain/fee-profile";
 import { defaultProfitabilityThresholds } from "@/lib/domain/profitability";
+import { monthStartUtc, monthlyOverheadTotalTry } from "@/lib/domain/overhead";
 import { getWeeklyUsdTryRate } from "@/lib/exchange-rate";
 import { resolveListingPricing } from "@/lib/etsy/pricing";
 import { prisma } from "@/lib/prisma";
@@ -39,7 +40,10 @@ export default async function CalculatorPage() {
       where: { baseCurrency: "USD", quoteCurrency: "TRY" },
       orderBy: { capturedAt: "desc" },
     }),
-    prisma.monthlyOverhead.findFirst({ orderBy: { month: "desc" } }),
+    prisma.monthlyOverhead.findFirst({
+      where: { month: { lte: monthStartUtc(now) } },
+      orderBy: { month: "desc" },
+    }),
     prisma.businessProfileVersion.findFirst({
       where: {
         effectiveFrom: { lte: now },
@@ -286,14 +290,7 @@ export default async function CalculatorPage() {
         .plus(overhead.officeTry.toString())
         .plus(overhead.otherTry.toString())
         .plus(overhead.etsyPlusTry.toString())
-    : businessProfile
-      ? businessProfile.accountantMonthlyTry
-          .plus(businessProfile.socialSecurityMonthlyTry)
-          .plus(businessProfile.invoicingSoftwareMonthlyTry)
-          .plus(businessProfile.bankingMonthlyTry)
-          .plus(businessProfile.officeMonthlyTry)
-          .plus(businessProfile.otherMonthlyBusinessCostsTry)
-      : new Decimal(0);
+    : new Decimal(0);
   const customsDuty = customs
     ? (customs.customsDutyAmount ??
       customs.declaredValue.mul(customs.customsDutyRate).div(100))
@@ -346,6 +343,26 @@ export default async function CalculatorPage() {
           ? `Effective profitability profile: ${assumptionProfile.name}`
           : "Built-in editable defaults; save a profitability profile in Settings"
       }
+      overheadEvidence={
+        overhead
+          ? {
+              month: overhead.month.toISOString(),
+              accountantTry: overhead.accountantTry.toString(),
+              socialSecurityTry: overhead.socialSecurityTry.toString(),
+              softwareTry: overhead.softwareTry.toString(),
+              bankingTry: overhead.bankingTry.toString(),
+              officeTry: overhead.officeTry.toString(),
+              otherTry: overhead.otherTry.toString(),
+              etsyPlusTry: overhead.etsyPlusTry.toString(),
+              monthlyTotalTry: monthlyOverheadTotalTry(overhead).toString(),
+              allocationMethod: overhead.allocationMethod,
+              expectedSales: overhead.expectedSales,
+              actualSales: overhead.actualSales,
+              manualPerOrderTry: overhead.manualPerOrderTry?.toString() ?? null,
+              notes: overhead.notes,
+            }
+          : null
+      }
       externalComparison={
         externalComparison
           ? {
@@ -373,9 +390,7 @@ export default async function CalculatorPage() {
             : "No current non-example USD customs quote",
         overhead: overhead
           ? `Monthly overhead saved for ${overhead.month.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}`
-          : businessProfile
-            ? `Fallback from business profile: ${businessProfile.name}`
-            : "No monthly overhead or current business profile",
+          : "No current monthly overhead record; no overhead deducted",
         fees: feeProfile
           ? `Etsy fee profile: ${feeProfile.name}`
           : "Built-in Etsy planning assumptions; save the official profile",

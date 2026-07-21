@@ -1,5 +1,6 @@
 import {
   createLegalProfileAction,
+  deleteMonthlyOverheadAction,
   saveMonthlyOverheadAction,
 } from "@/app/actions/ledger";
 import { legalProfileWarnings } from "@/lib/compliance";
@@ -10,25 +11,43 @@ import {
   businessConsistencyWarnings,
 } from "@/lib/business/consistency";
 import { createBusinessPersonAction } from "@/app/actions/operations";
+import { monthStartUtc, monthlyOverheadTotalTry } from "@/lib/domain/overhead";
+import { formatMoney } from "@/lib/domain/money";
+
+const overheadFields = [
+  ["accountantTry", "Accountant / bookkeeping (TRY)"],
+  ["socialSecurityTry", "SGK / Bağ-Kur planning amount (TRY)"],
+  ["softwareTry", "Software subscriptions (TRY)"],
+  ["bankingTry", "Banking and payment costs (TRY)"],
+  ["officeTry", "Office / workspace costs (TRY)"],
+  ["otherTry", "Other recurring overhead (TRY)"],
+  ["etsyPlusTry", "Etsy Plus (TRY)"],
+] as const;
 
 export default async function BusinessPage() {
   await requireAdmin({ redirectTo: "/business" });
-  const [profiles, businessProfile, people] = await Promise.all([
-    prisma.legalOperatingProfile.findMany({
-      orderBy: { effectiveFrom: "desc" },
-    }),
-    prisma.businessProfile.findFirst({
-      where: { active: true },
-      orderBy: { effectiveFrom: "desc" },
-    }),
-    prisma.businessPerson.findMany({
-      where: { active: true },
-      include: {
-        roles: { where: { effectiveTo: null }, orderBy: { role: "asc" } },
-      },
-      orderBy: { fullName: "asc" },
-    }),
-  ]);
+  const currentMonth = monthStartUtc(new Date());
+  const [profiles, businessProfile, people, monthlyOverheads] =
+    await Promise.all([
+      prisma.legalOperatingProfile.findMany({
+        orderBy: { effectiveFrom: "desc" },
+      }),
+      prisma.businessProfile.findFirst({
+        where: { active: true },
+        orderBy: { effectiveFrom: "desc" },
+      }),
+      prisma.businessPerson.findMany({
+        where: { active: true },
+        include: {
+          roles: { where: { effectiveTo: null }, orderBy: { role: "asc" } },
+        },
+        orderBy: { fullName: "asc" },
+      }),
+      prisma.monthlyOverhead.findMany({ orderBy: { month: "desc" } }),
+    ]);
+  const activeOverhead = monthlyOverheads.find(
+    (item) => item.month <= currentMonth,
+  );
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <header>
@@ -274,15 +293,7 @@ export default async function BusinessPage() {
             Month
             <input className="field mt-1" name="month" type="month" required />
           </label>
-          {[
-            ["accountantTry", "Accountant / bookkeeping (TRY)"],
-            ["socialSecurityTry", "SGK / Bağ-Kur planning amount (TRY)"],
-            ["softwareTry", "Software subscriptions (TRY)"],
-            ["bankingTry", "Banking and payment costs (TRY)"],
-            ["officeTry", "Office / workspace costs (TRY)"],
-            ["otherTry", "Other recurring overhead (TRY)"],
-            ["etsyPlusTry", "Etsy Plus (TRY)", "500"],
-          ].map(([name, label]) => (
+          {overheadFields.map(([name, label]) => (
             <label className="text-xs text-stone-500" key={name}>
               {label}
               <input
@@ -291,7 +302,7 @@ export default async function BusinessPage() {
                 type="number"
                 min="0"
                 step="0.01"
-                defaultValue={name === "etsyPlusTry" ? "500" : "0"}
+                defaultValue="0"
               />
             </label>
           ))}
@@ -348,6 +359,147 @@ export default async function BusinessPage() {
             Save month
           </button>
         </form>
+      </section>
+      <section className="card p-5" id="saved-monthly-overhead">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Saved monthly overhead</h2>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-stone-500">
+              The Calculator uses the newest month that is not in the future.
+              Review every category here before treating the allocated amount as
+              a real cost.
+            </p>
+          </div>
+          <span className="pill">{monthlyOverheads.length} saved month(s)</span>
+        </div>
+        <div className="mt-5 space-y-4">
+          {monthlyOverheads.map((item) => {
+            const total = monthlyOverheadTotalTry(item);
+            const isActive = item.id === activeOverhead?.id;
+            const isFuture = item.month > currentMonth;
+            return (
+              <article
+                className="rounded-2xl border bg-stone-50/60 p-4"
+                key={item.id}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold">
+                      {item.month.toLocaleDateString("en-GB", {
+                        month: "long",
+                        year: "numeric",
+                        timeZone: "UTC",
+                      })}
+                    </h3>
+                    <p className="mt-1 text-sm">
+                      Monthly total: {formatMoney(total, "TRY")}
+                    </p>
+                  </div>
+                  <span
+                    className={`pill ${isActive ? "border-emerald-200 bg-emerald-50 text-emerald-800" : isFuture ? "border-amber-200 bg-amber-50 text-amber-800" : ""}`}
+                  >
+                    {isActive
+                      ? "Used by Calculator"
+                      : isFuture
+                        ? "Future · not used yet"
+                        : "Historical"}
+                  </span>
+                </div>
+                <form
+                  action={saveMonthlyOverheadAction}
+                  className="mt-4 grid gap-3 sm:grid-cols-4"
+                >
+                  <input
+                    name="month"
+                    type="hidden"
+                    value={item.month.toISOString().slice(0, 7)}
+                  />
+                  {overheadFields.map(([name, label]) => (
+                    <label className="text-xs text-stone-500" key={name}>
+                      {label}
+                      <input
+                        className="field mt-1"
+                        name={name}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        defaultValue={item[name].toString()}
+                      />
+                    </label>
+                  ))}
+                  <label className="text-xs text-stone-500">
+                    Allocation method
+                    <select
+                      className="field mt-1"
+                      name="allocationMethod"
+                      defaultValue={item.allocationMethod}
+                    >
+                      <option>EXPECTED_SALES</option>
+                      <option>ACTUAL_SALES</option>
+                      <option>NONE</option>
+                      <option>MANUAL_PER_ORDER</option>
+                      <option>REVENUE_WEIGHTED</option>
+                    </select>
+                  </label>
+                  <label className="text-xs text-stone-500">
+                    Expected monthly sales
+                    <input
+                      className="field mt-1"
+                      name="expectedSales"
+                      type="number"
+                      min="1"
+                      defaultValue={item.expectedSales}
+                    />
+                  </label>
+                  <label className="text-xs text-stone-500">
+                    Actual completed sales
+                    <input
+                      className="field mt-1"
+                      name="actualSales"
+                      type="number"
+                      min="0"
+                      defaultValue={item.actualSales ?? 0}
+                    />
+                  </label>
+                  <label className="text-xs text-stone-500">
+                    Manual overhead per order (TRY)
+                    <input
+                      className="field mt-1"
+                      name="manualPerOrderTry"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      defaultValue={item.manualPerOrderTry?.toString() ?? 0}
+                    />
+                  </label>
+                  <label className="text-xs text-stone-500 sm:col-span-2">
+                    Source or notes
+                    <input
+                      className="field mt-1"
+                      name="notes"
+                      defaultValue={item.notes ?? ""}
+                    />
+                  </label>
+                  <button className="rounded-xl bg-jade px-3 py-2 text-sm text-white">
+                    Save corrections
+                  </button>
+                </form>
+                <form action={deleteMonthlyOverheadAction} className="mt-3">
+                  <input name="id" type="hidden" value={item.id} />
+                  <button className="rounded-xl border border-red-200 bg-white px-3 py-2 text-xs text-red-700">
+                    Delete this month
+                  </button>
+                </form>
+              </article>
+            );
+          })}
+          {!monthlyOverheads.length && (
+            <p className="rounded-xl border border-dashed p-5 text-sm text-stone-500">
+              No monthly overhead is configured. The Calculator will not invent
+              one.
+            </p>
+          )}
+        </div>
       </section>
       <div className="grid gap-4">
         {profiles.map((p) => {

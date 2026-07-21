@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import Decimal from "decimal.js";
 import { AlertTriangle, ChevronDown, Info, RotateCcw } from "lucide-react";
@@ -78,12 +78,30 @@ interface ExternalComparison {
   otherCommissionUsd: string;
 }
 
+interface PlanningOverheadEvidence {
+  month: string;
+  accountantTry: string;
+  socialSecurityTry: string;
+  softwareTry: string;
+  bankingTry: string;
+  officeTry: string;
+  otherTry: string;
+  etsyPlusTry: string;
+  monthlyTotalTry: string;
+  allocationMethod: string;
+  expectedSales: number;
+  actualSales: number | null;
+  manualPerOrderTry: string | null;
+  notes: string | null;
+}
+
 export function CalculatorWorkspace({
   products,
   exchangeRate,
   planningDefaults,
   planningSources,
   externalComparison,
+  overheadEvidence,
   profitabilityThresholds = defaultProfitabilityThresholds,
   profitabilityTargetsSource,
 }: {
@@ -92,6 +110,7 @@ export function CalculatorWorkspace({
   planningDefaults: Partial<CalculatorInput>;
   planningSources: PlanningSources;
   externalComparison: ExternalComparison | null;
+  overheadEvidence: PlanningOverheadEvidence | null;
   profitabilityThresholds?: ProfitabilityThresholds;
   profitabilityTargetsSource: string;
 }) {
@@ -272,7 +291,7 @@ export function CalculatorWorkspace({
         if (new Decimal(calculationInput.taxReserveRate).eq(0))
           missing.push("tax reserve");
         if (!analysis?.productionHoursPerUnit) missing.push("production time");
-        if (!analysis?.economicLabourCostUsd)
+        if (analysis?.economicLabourCostUsd === null)
           missing.push("economic labour rate");
         return {
           product,
@@ -469,6 +488,14 @@ export function CalculatorWorkspace({
     planTotals.productionHours.gt(0) && planTotals.economicMissing === 0
       ? planTotals.economicProfit.div(planTotals.productionHours)
       : null;
+  const allocatedOverheadPerOrderTry = planTotals.units
+    ? planTotals.overhead.div(planTotals.units).mul(calculationInput.usdTryRate)
+    : null;
+  const savedOverheadMatchesInput = overheadEvidence
+    ? new Decimal(overheadEvidence.monthlyTotalTry).eq(
+        calculationInput.monthlyOverheadTry,
+      )
+    : new Decimal(calculationInput.monthlyOverheadTry).eq(0);
   const missingPlanInputs = Array.from(
     new Set(selectedPlanRows.flatMap((row) => row.missing)),
   );
@@ -1090,6 +1117,83 @@ export function CalculatorWorkspace({
                   description="Monthly accountant, SGK, software, banking, office and other costs divided by expected orders."
                   source={planningSources.overhead}
                   href="/business"
+                  details={
+                    overheadEvidence ? (
+                      <div className="mt-3 rounded-lg bg-stone-50 p-3 text-[11px] leading-5 text-stone-600">
+                        <p className="font-semibold text-stone-800">
+                          Exact saved breakdown
+                        </p>
+                        {[
+                          [
+                            "Accountant / bookkeeping",
+                            overheadEvidence.accountantTry,
+                          ],
+                          ["SGK / Bağ-Kur", overheadEvidence.socialSecurityTry],
+                          ["Software", overheadEvidence.softwareTry],
+                          ["Banking", overheadEvidence.bankingTry],
+                          ["Office", overheadEvidence.officeTry],
+                          ["Other", overheadEvidence.otherTry],
+                          ["Etsy Plus", overheadEvidence.etsyPlusTry],
+                        ].map(([name, amount]) => (
+                          <p className="flex justify-between gap-3" key={name}>
+                            <span>{name}</span>
+                            <span>{formatMoney(amount, "TRY")}</span>
+                          </p>
+                        ))}
+                        <p className="mt-1 flex justify-between gap-3 border-t pt-1 font-semibold">
+                          <span>Monthly total</span>
+                          <span>
+                            {formatMoney(
+                              overheadEvidence.monthlyTotalTry,
+                              "TRY",
+                            )}
+                          </span>
+                        </p>
+                        <p className="mt-2">
+                          Allocation: {overheadEvidence.allocationMethod}
+                          {overheadEvidence.allocationMethod === "ACTUAL_SALES"
+                            ? ` · ${overheadEvidence.actualSales ?? 0} actual orders`
+                            : overheadEvidence.allocationMethod ===
+                                  "EXPECTED_SALES" ||
+                                overheadEvidence.allocationMethod ===
+                                  "REVENUE_WEIGHTED"
+                              ? ` · ${overheadEvidence.expectedSales} expected orders`
+                              : ""}
+                        </p>
+                        <p>
+                          Per planned order:{" "}
+                          {allocatedOverheadPerOrderTry
+                            ? formatMoney(allocatedOverheadPerOrderTry, "TRY")
+                            : "N/A"}
+                        </p>
+                        <p>
+                          Selected plan: {planTotals.units} units · deducted{" "}
+                          {formatMoney(planTotals.overhead, "USD")}
+                        </p>
+                        {!savedOverheadMatchesInput && (
+                          <p className="mt-2 rounded bg-amber-50 p-2 text-amber-900">
+                            The editable Calculator monthly-overhead input no
+                            longer matches this saved record. The deduction uses
+                            the current input value of{" "}
+                            {formatMoney(
+                              calculationInput.monthlyOverheadTry,
+                              "TRY",
+                            )}
+                            .
+                          </p>
+                        )}
+                        {overheadEvidence.notes && (
+                          <p className="mt-1">
+                            Notes: {overheadEvidence.notes}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-[11px] text-red-600">
+                        No current or historical overhead record was selected.
+                      </p>
+                    )
+                  }
                 />
                 <Deduction
                   label="Etsy fees + fee VAT"
@@ -1452,6 +1556,7 @@ function Deduction({
   description,
   source,
   href,
+  details,
 }: {
   label: string;
   value: Decimal;
@@ -1460,6 +1565,7 @@ function Deduction({
   description?: string;
   source?: string;
   href?: string;
+  details?: ReactNode;
 }) {
   const missing = missingOverride ?? value.eq(0);
   return (
@@ -1481,6 +1587,7 @@ function Deduction({
           <span className="font-medium">Source:</span> {source}
         </p>
       )}
+      {details}
       {href && (
         <Link
           className="mt-2 inline-block text-[11px] font-medium text-jade underline"
