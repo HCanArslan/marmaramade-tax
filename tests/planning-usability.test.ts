@@ -64,7 +64,7 @@ describe("planning usability", () => {
       source("lib/domain/defaults.ts"),
     ]);
     expect(calculator).not.toContain("withoutIgnoredCosts");
-    expect(calculator).toContain("Product & business costs");
+    expect(calculator).toContain('title="Product costs"');
     expect(dashboard).not.toContain("Tuesday · 14 July 2026");
     expect(dashboard).not.toContain("40.00 USD/TRY");
     expect(defaults).toContain('internationalShippingUsd: "0"');
@@ -92,7 +92,7 @@ describe("planning usability", () => {
     expect(inventory).toContain("Recorded finished units");
   });
 
-  it("never presents a zero-input monthly scenario as reliable profit", async () => {
+  it("never presents a zero-input scenario as reliable profit", async () => {
     const [calculator, calculatorPage, shipping, actions] = await Promise.all([
       source("components/calculator-workspace.tsx"),
       source("app/calculator/page.tsx"),
@@ -108,7 +108,7 @@ describe("planning usability", () => {
     expect(calculator).toContain("tax reserve");
     expect(calculator).toContain("Open source page");
     expect(calculatorPage).toContain("Latest saved fallback");
-    expect(calculatorPage).toContain("businessProfile");
+    expect(calculatorPage).toContain("annualBusinessBudgetIds");
     expect(calculatorPage).toContain('contains: "example"');
     expect(shipping).toContain("Use for planning");
     expect(shipping).toContain("Automatic Calculator fallback");

@@ -1,10 +1,6 @@
 import {
-  createRecurringBusinessCostAction,
   createLegalProfileAction,
-  deleteMonthlyOverheadAction,
-  deleteRecurringBusinessCostAction,
-  saveMonthlyOverheadAction,
-  updateRecurringBusinessCostAction,
+  saveAnnualBusinessBudgetAction,
 } from "@/app/actions/ledger";
 import { legalProfileWarnings } from "@/lib/compliance";
 import { requireAdmin } from "@/lib/auth/require-admin";
@@ -15,31 +11,20 @@ import {
 } from "@/lib/business/consistency";
 import { createBusinessPersonAction } from "@/app/actions/operations";
 import {
+  ANNUAL_BUSINESS_BUDGET_DEFAULTS,
+  ANNUAL_BUSINESS_BUDGET_IDS,
+  annualBusinessBudgetIds,
   annualizeRecurringBusinessCost,
-  monthStartUtc,
-  monthlyOverheadTotalTry,
 } from "@/lib/domain/overhead";
 import { formatMoney } from "@/lib/domain/money";
 import Decimal from "decimal.js";
 
-const overheadFields = [
-  ["accountantTry", "Accountant / bookkeeping (TRY)"],
-  ["socialSecurityTry", "SGK / Bağ-Kur planning amount (TRY)"],
-  ["softwareTry", "Software subscriptions (TRY)"],
-  ["bankingTry", "Banking and payment costs (TRY)"],
-  ["officeTry", "Office / workspace costs (TRY)"],
-  ["otherTry", "Other recurring overhead (TRY)"],
-  ["etsyPlusTry", "Etsy Plus (TRY)"],
-] as const;
-
 export default async function BusinessPage() {
   await requireAdmin({ redirectTo: "/business" });
-  const currentMonth = monthStartUtc(new Date());
   const [
     profiles,
     businessProfile,
     people,
-    monthlyOverheads,
     recurringBusinessCosts,
     latestUsdTry,
   ] = await Promise.all([
@@ -57,20 +42,19 @@ export default async function BusinessPage() {
       },
       orderBy: { fullName: "asc" },
     }),
-    prisma.monthlyOverhead.findMany({ orderBy: { month: "desc" } }),
     prisma.recurringBusinessCost.findMany({
-      orderBy: [{ includeInSalesPlan: "desc" }, { effectiveFrom: "desc" }],
+      where: { id: { in: annualBusinessBudgetIds } },
+      orderBy: { name: "asc" },
     }),
     prisma.exchangeRateSnapshot.findFirst({
       where: { baseCurrency: "USD", quoteCurrency: "TRY" },
       orderBy: { capturedAt: "desc" },
     }),
   ]);
-  const activeOverhead = monthlyOverheads.find(
-    (item) => item.month <= currentMonth,
-  );
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
+  const budgetById = new Map(
+    recurringBusinessCosts.map((item) => [item.id, item]),
+  );
   const annualPlanningTotalTry = recurringBusinessCosts
     .filter(
       (item) =>
@@ -325,13 +309,14 @@ export default async function BusinessPage() {
       <section className="card p-5" id="annual-sales-plan-costs">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="eyebrow">Annual sell-all planning</p>
-            <h2 className="mt-1 font-semibold">Recurring business costs</h2>
+            <p className="eyebrow">One source of truth</p>
+            <h2 className="mt-1 text-xl font-semibold">
+              Yearly business spending
+            </h2>
             <p className="mt-1 max-w-3xl text-xs leading-5 text-stone-500">
-              Enter each cost in its real currency and billing frequency. Sales
-              Plan annualizes monthly charges, adds entered VAT, converts USD at
-              the planning rate, and deducts the complete yearly total exactly
-              once.
+              This is the only business-overhead source used by Sales Plan.
+              Monthly legacy records and older Etsy assumptions are ignored, so
+              these costs are not duplicated.
             </p>
           </div>
           <div className="text-right">
@@ -342,301 +327,86 @@ export default async function BusinessPage() {
           </div>
         </div>
         <form
-          action={createRecurringBusinessCostAction}
-          className="mt-5 grid gap-3 sm:grid-cols-4"
+          action={saveAnnualBusinessBudgetAction}
+          className="mt-5 grid gap-4 border-t pt-5 sm:grid-cols-2 lg:grid-cols-3"
         >
-          <RecurringCostFields today={today} />
-          <button className="rounded-xl bg-jade px-3 py-2 text-sm text-white">
-            Add annual planning cost
+          <AnnualBudgetField
+            label="Mükellef.co monthly net"
+            name="mukellefMonthlyNetTry"
+            suffix="TRY / month"
+            value={
+              budgetById
+                .get(ANNUAL_BUSINESS_BUDGET_IDS.mukellef)
+                ?.amount.toString() ??
+              ANNUAL_BUSINESS_BUDGET_DEFAULTS.mukellefMonthlyNetTry
+            }
+          />
+          <AnnualBudgetField
+            label="Mükellef KDV"
+            name="mukellefVatRate"
+            suffix="%"
+            value={
+              budgetById
+                .get(ANNUAL_BUSINESS_BUDGET_IDS.mukellef)
+                ?.vatRate.toString() ??
+              ANNUAL_BUSINESS_BUDGET_DEFAULTS.mukellefVatRate
+            }
+          />
+          <AnnualBudgetField
+            label="ChatGPT Plus gross"
+            name="chatgptMonthlyGrossUsd"
+            suffix="USD / month"
+            value={
+              budgetById
+                .get(ANNUAL_BUSINESS_BUDGET_IDS.chatgpt)
+                ?.amount.toString() ??
+              ANNUAL_BUSINESS_BUDGET_DEFAULTS.chatgptMonthlyGrossUsd
+            }
+          />
+          <AnnualBudgetField
+            label="Packaging supplies"
+            name="packagingAnnualTry"
+            suffix="TRY / year"
+            value={
+              budgetById
+                .get(ANNUAL_BUSINESS_BUDGET_IDS.packaging)
+                ?.amount.toString() ??
+              ANNUAL_BUSINESS_BUDGET_DEFAULTS.packagingAnnualTry
+            }
+          />
+          <AnnualBudgetField
+            label="Etsy business"
+            name="etsyMonthlyTry"
+            suffix="TRY / month"
+            value={
+              budgetById
+                .get(ANNUAL_BUSINESS_BUDGET_IDS.etsy)
+                ?.amount.toString() ??
+              ANNUAL_BUSINESS_BUDGET_DEFAULTS.etsyMonthlyTry
+            }
+          />
+          <button className="self-end rounded-xl bg-jade px-4 py-3 text-sm font-medium text-white">
+            Save yearly budget
           </button>
         </form>
-        <div className="mt-5 space-y-3">
-          {recurringBusinessCosts.map((cost) => {
-            const annualized = annualizeRecurringBusinessCost(
-              {
-                amount: cost.amount,
-                currency: cost.currency as "TRY" | "USD",
-                billingFrequency: cost.billingFrequency as "MONTHLY" | "ANNUAL",
-                vatRate: cost.vatRate,
-              },
-              latestUsdTry?.rate ?? 1,
-            );
-            return (
-              <article
-                className="rounded-2xl border bg-stone-50/60 p-4"
-                key={cost.id}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-semibold">{cost.name}</h3>
-                    <p className="mt-1 text-xs text-stone-500">
-                      {cost.amount.toString()} {cost.currency} ·{" "}
-                      {cost.billingFrequency.toLowerCase()} · VAT{" "}
-                      {cost.vatRate.toString()}%
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <span className="pill">
-                      {cost.includeInSalesPlan ? "Included" : "Excluded"}
-                    </span>
-                    <p className="mt-1 text-sm font-semibold">
-                      {formatMoney(annualized.annualGrossTry, "TRY")} / year
-                    </p>
-                  </div>
-                </div>
-                <form
-                  action={updateRecurringBusinessCostAction}
-                  className="mt-4 grid gap-3 sm:grid-cols-4"
-                >
-                  <input name="id" type="hidden" value={cost.id} />
-                  <RecurringCostFields cost={cost} today={today} />
-                  <button className="rounded-xl bg-jade px-3 py-2 text-sm text-white">
-                    Save cost
-                  </button>
-                </form>
-                <form
-                  action={deleteRecurringBusinessCostAction}
-                  className="mt-3"
-                >
-                  <input name="id" type="hidden" value={cost.id} />
-                  <button className="rounded-xl border border-red-200 bg-white px-3 py-2 text-xs text-red-700">
-                    Delete cost
-                  </button>
-                </form>
-              </article>
-            );
-          })}
-          {!recurringBusinessCosts.length && (
-            <p className="rounded-xl border border-dashed p-5 text-sm text-stone-500">
-              No annual planning costs are configured. Sales Plan will deduct
-              zero instead of inventing an amount. Example: Mükellef · 36,000
-              TRY · annual · enter invoice VAT; ChatGPT · 20 USD · monthly.
+        <div className="mt-4 grid gap-3 text-xs text-stone-600 sm:grid-cols-2">
+          <details className="rounded-xl bg-stone-50 p-4">
+            <summary className="cursor-pointer font-medium text-stone-800">
+              What Mükellef includes
+            </summary>
+            <p className="mt-2 leading-5">
+              Company formation, e-invoice with 1,000 first-year credits,
+              e-signature, pre-accounting software, digital document access,
+              online accounting, trademark registration analysis, and 1,200
+              transactions per year.
             </p>
-          )}
-        </div>
-      </section>
-      <section className="card p-5">
-        <h2 className="font-semibold">Sole-proprietorship monthly overhead</h2>
-        <p className="mt-1 max-w-3xl text-xs leading-5 text-stone-500">
-          Quick calculator and legacy per-order analysis only. Annual Sales Plan
-          uses the recurring costs above. Leave an amount at zero only when that
-          category genuinely has no cost; this does not determine deductibility
-          or SGK treatment.
-        </p>
-        <form
-          action={saveMonthlyOverheadAction}
-          className="mt-4 grid gap-3 sm:grid-cols-4"
-        >
-          <label className="text-xs text-stone-500">
-            Month
-            <input className="field mt-1" name="month" type="month" required />
-          </label>
-          {overheadFields.map(([name, label]) => (
-            <label className="text-xs text-stone-500" key={name}>
-              {label}
-              <input
-                className="field mt-1"
-                name={name}
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue="0"
-              />
-            </label>
-          ))}
-          <label className="text-xs text-stone-500">
-            Allocation method
-            <select
-              className="field mt-1"
-              name="allocationMethod"
-              defaultValue="EXPECTED_SALES"
-            >
-              <option>EXPECTED_SALES</option>
-              <option>ACTUAL_SALES</option>
-              <option>NONE</option>
-              <option>MANUAL_PER_ORDER</option>
-              <option>REVENUE_WEIGHTED</option>
-            </select>
-          </label>
-          <label className="text-xs text-stone-500">
-            Expected monthly sales
-            <input
-              className="field mt-1"
-              name="expectedSales"
-              type="number"
-              min="1"
-              defaultValue="10"
-            />
-          </label>
-          <label className="text-xs text-stone-500">
-            Actual completed sales (optional)
-            <input
-              className="field mt-1"
-              name="actualSales"
-              type="number"
-              min="0"
-              defaultValue="0"
-            />
-          </label>
-          <label className="text-xs text-stone-500">
-            Manual overhead per order (TRY)
-            <input
-              className="field mt-1"
-              name="manualPerOrderTry"
-              type="number"
-              min="0"
-              step="0.01"
-              defaultValue="0"
-            />
-          </label>
-          <label className="text-xs text-stone-500">
-            Source or professional notes (optional)
-            <input className="field mt-1" name="notes" />
-          </label>
-          <button className="rounded-xl bg-jade px-3 py-2 text-sm text-white">
-            Save month
-          </button>
-        </form>
-      </section>
-      <section className="card p-5" id="saved-monthly-overhead">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="font-semibold">Saved monthly overhead</h2>
-            <p className="mt-1 max-w-3xl text-xs leading-5 text-stone-500">
-              The Calculator uses the newest month that is not in the future.
-              Review every category here before treating the allocated amount as
-              a real cost.
-            </p>
+          </details>
+          <div className="rounded-xl bg-amber-50 p-4 leading-5 text-amber-900">
+            Packaging note: ₺1,500 is the annual supplies budget.
+            Product-level packaging remains a direct product-cost field; do not
+            enter the same purchase there if this annual budget already
+            represents it.
           </div>
-          <span className="pill">{monthlyOverheads.length} saved month(s)</span>
-        </div>
-        <div className="mt-5 space-y-4">
-          {monthlyOverheads.map((item) => {
-            const total = monthlyOverheadTotalTry(item);
-            const isActive = item.id === activeOverhead?.id;
-            const isFuture = item.month > currentMonth;
-            return (
-              <article
-                className="rounded-2xl border bg-stone-50/60 p-4"
-                key={item.id}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-semibold">
-                      {item.month.toLocaleDateString("en-GB", {
-                        month: "long",
-                        year: "numeric",
-                        timeZone: "UTC",
-                      })}
-                    </h3>
-                    <p className="mt-1 text-sm">
-                      Monthly total: {formatMoney(total, "TRY")}
-                    </p>
-                  </div>
-                  <span
-                    className={`pill ${isActive ? "border-emerald-200 bg-emerald-50 text-emerald-800" : isFuture ? "border-amber-200 bg-amber-50 text-amber-800" : ""}`}
-                  >
-                    {isActive
-                      ? "Used by Calculator"
-                      : isFuture
-                        ? "Future · not used yet"
-                        : "Historical"}
-                  </span>
-                </div>
-                <form
-                  action={saveMonthlyOverheadAction}
-                  className="mt-4 grid gap-3 sm:grid-cols-4"
-                >
-                  <input
-                    name="month"
-                    type="hidden"
-                    value={item.month.toISOString().slice(0, 7)}
-                  />
-                  {overheadFields.map(([name, label]) => (
-                    <label className="text-xs text-stone-500" key={name}>
-                      {label}
-                      <input
-                        className="field mt-1"
-                        name={name}
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        defaultValue={item[name].toString()}
-                      />
-                    </label>
-                  ))}
-                  <label className="text-xs text-stone-500">
-                    Allocation method
-                    <select
-                      className="field mt-1"
-                      name="allocationMethod"
-                      defaultValue={item.allocationMethod}
-                    >
-                      <option>EXPECTED_SALES</option>
-                      <option>ACTUAL_SALES</option>
-                      <option>NONE</option>
-                      <option>MANUAL_PER_ORDER</option>
-                      <option>REVENUE_WEIGHTED</option>
-                    </select>
-                  </label>
-                  <label className="text-xs text-stone-500">
-                    Expected monthly sales
-                    <input
-                      className="field mt-1"
-                      name="expectedSales"
-                      type="number"
-                      min="1"
-                      defaultValue={item.expectedSales}
-                    />
-                  </label>
-                  <label className="text-xs text-stone-500">
-                    Actual completed sales
-                    <input
-                      className="field mt-1"
-                      name="actualSales"
-                      type="number"
-                      min="0"
-                      defaultValue={item.actualSales ?? 0}
-                    />
-                  </label>
-                  <label className="text-xs text-stone-500">
-                    Manual overhead per order (TRY)
-                    <input
-                      className="field mt-1"
-                      name="manualPerOrderTry"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      defaultValue={item.manualPerOrderTry?.toString() ?? 0}
-                    />
-                  </label>
-                  <label className="text-xs text-stone-500 sm:col-span-2">
-                    Source or notes
-                    <input
-                      className="field mt-1"
-                      name="notes"
-                      defaultValue={item.notes ?? ""}
-                    />
-                  </label>
-                  <button className="rounded-xl bg-jade px-3 py-2 text-sm text-white">
-                    Save corrections
-                  </button>
-                </form>
-                <form action={deleteMonthlyOverheadAction} className="mt-3">
-                  <input name="id" type="hidden" value={item.id} />
-                  <button className="rounded-xl border border-red-200 bg-white px-3 py-2 text-xs text-red-700">
-                    Delete this month
-                  </button>
-                </form>
-              </article>
-            );
-          })}
-          {!monthlyOverheads.length && (
-            <p className="rounded-xl border border-dashed p-5 text-sm text-stone-500">
-              No monthly overhead is configured. The Calculator will not invent
-              one.
-            </p>
-          )}
         </div>
       </section>
       <div className="grid gap-4">
@@ -699,134 +469,38 @@ export default async function BusinessPage() {
   );
 }
 
-function RecurringCostFields({
-  cost,
-  today,
+function AnnualBudgetField({
+  label,
+  name,
+  suffix,
+  value,
 }: {
-  cost?: {
-    name: string;
-    category: string;
-    amount: Decimal;
-    currency: string;
-    billingFrequency: string;
-    vatRate: Decimal;
-    includeInSalesPlan: boolean;
-    effectiveFrom: Date;
-    effectiveTo: Date | null;
-    notes: string | null;
-  };
-  today: string;
+  label: string;
+  name: string;
+  suffix: string;
+  value: string;
 }) {
   return (
-    <>
-      <label className="text-xs text-stone-500 sm:col-span-2">
-        Cost name
+    <label className="text-xs text-stone-500">
+      {label}
+      <div className="relative mt-1">
         <input
-          className="field mt-1"
-          name="name"
-          required
-          defaultValue={cost?.name ?? ""}
-          placeholder="Mükellef or ChatGPT"
-        />
-      </label>
-      <label className="text-xs text-stone-500">
-        Category
-        <select
-          className="field mt-1"
-          name="category"
-          defaultValue={cost?.category ?? "ACCOUNTING"}
-        >
-          <option>ACCOUNTING</option>
-          <option>SOFTWARE</option>
-          <option>BANKING</option>
-          <option>OFFICE</option>
-          <option>OTHER</option>
-        </select>
-      </label>
-      <label className="text-xs text-stone-500">
-        Amount before entered VAT
-        <input
-          className="field mt-1"
-          name="amount"
+          className="field pr-24"
+          name={name}
           type="number"
           min="0"
           step="0.01"
           required
-          defaultValue={cost?.amount.toString() ?? "0"}
+          defaultValue={value}
         />
-      </label>
-      <label className="text-xs text-stone-500">
-        Currency
-        <select
-          className="field mt-1"
-          name="currency"
-          defaultValue={cost?.currency ?? "TRY"}
-        >
-          <option>TRY</option>
-          <option>USD</option>
-        </select>
-      </label>
-      <label className="text-xs text-stone-500">
-        Billing frequency
-        <select
-          className="field mt-1"
-          name="billingFrequency"
-          defaultValue={cost?.billingFrequency ?? "ANNUAL"}
-        >
-          <option>ANNUAL</option>
-          <option>MONTHLY</option>
-        </select>
-      </label>
-      <label className="text-xs text-stone-500">
-        VAT added to cash cost %
-        <input
-          className="field mt-1"
-          name="vatRate"
-          type="number"
-          min="0"
-          max="100"
-          step="0.01"
-          defaultValue={cost?.vatRate.toString() ?? "0"}
-        />
-      </label>
-      <label className="text-xs text-stone-500">
-        Effective from
-        <input
-          className="field mt-1"
-          name="effectiveFrom"
-          type="date"
-          required
-          defaultValue={cost?.effectiveFrom.toISOString().slice(0, 10) ?? today}
-        />
-      </label>
-      <label className="text-xs text-stone-500">
-        Effective to (optional)
-        <input
-          className="field mt-1"
-          name="effectiveTo"
-          type="date"
-          defaultValue={cost?.effectiveTo?.toISOString().slice(0, 10) ?? ""}
-        />
-      </label>
-      <label className="text-xs text-stone-500 sm:col-span-2">
-        Notes
-        <input
-          className="field mt-1"
-          name="notes"
-          defaultValue={cost?.notes ?? ""}
-        />
-      </label>
-      <label className="flex items-center gap-2 rounded-xl border bg-white px-3 text-sm">
-        <input
-          name="includeInSalesPlan"
-          type="checkbox"
-          defaultChecked={cost?.includeInSalesPlan ?? true}
-        />
-        Include in annual Sales Plan
-      </label>
-    </>
+        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] font-medium text-stone-400">
+          {suffix}
+        </span>
+      </div>
+    </label>
   );
 }
+
 function Select({
   name,
   label,

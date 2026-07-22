@@ -13,7 +13,10 @@ import {
 import { ProfitabilitySimulator } from "@/components/profitability-simulator";
 import { defaultCalculatorInput } from "@/lib/domain/defaults";
 import { formatMoney, type CurrencyCode } from "@/lib/domain/money";
-import { resolveAnnualPlanOverhead } from "@/lib/domain/overhead";
+import {
+  ANNUAL_BUSINESS_BUDGET_IDS,
+  resolveAnnualPlanOverhead,
+} from "@/lib/domain/overhead";
 import type { CalculatorInput } from "@/lib/domain/types";
 
 type Tab = "quick" | "reverse" | "plan";
@@ -214,6 +217,13 @@ export function CalculatorWorkspace({
       ),
     [annualOverheadEvidence?.annualTotalTry, plannedUnitCount],
   );
+  const annualPackagingBudgetIncluded = Boolean(
+    annualOverheadEvidence?.items.some(
+      (cost) =>
+        cost.id === ANNUAL_BUSINESS_BUDGET_IDS.packaging &&
+        new Decimal(cost.annualGrossTry).gt(0),
+    ),
+  );
   const planCalculationInput: CalculatorInput = useMemo(
     () => ({
       ...calculationInput,
@@ -238,7 +248,9 @@ export function CalculatorWorkspace({
                 materialCostTry: product.materialCostTry,
                 laborHours: product.laborHours,
                 laborHourlyRateTry: product.laborHourlyRateTry,
-                packagingCostTry: product.packagingCostTry,
+                packagingCostTry: annualPackagingBudgetIncluded
+                  ? "0"
+                  : product.packagingCostTry,
                 additionalDirectCostTry: product.additionalDirectCostTry,
                 internationalShippingUsd: product.internationalShippingUsd,
                 shippingInsuranceUsd: product.shippingInsuranceUsd,
@@ -332,6 +344,7 @@ export function CalculatorWorkspace({
     [
       planCalculationInput,
       annualOverheadEvidence,
+      annualPackagingBudgetIncluded,
       planQuantities,
       products,
       profitabilityThresholds,
@@ -566,10 +579,10 @@ export function CalculatorWorkspace({
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-stone-500">
             Choose a synchronized product to load its Etsy price and saved cost
-            version. Quick calculator uses saved monthly overhead; Sales Plan
-            uses annual recurring costs. Both use the planning tax reserve,
-            exchange rate, shipping quote, and customs quote when those records
-            exist.
+            version. Annual business spending is deducted only in Sales Plan, so
+            it cannot be counted again in the single-product calculator. Both
+            views use the planning tax reserve, exchange rate, shipping quote,
+            and customs quote when those records exist.
           </p>
         </div>
         <button
@@ -696,8 +709,8 @@ export function CalculatorWorkspace({
               </div>
             </InputSection>
             <InputSection
-              title="Product & business costs"
-              hint="Selected product + saved monthly planning inputs"
+              title="Product costs"
+              hint="Selected product costs; annual business spending is applied only in Sales Plan"
             >
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <NumberField
@@ -730,52 +743,6 @@ export function CalculatorWorkspace({
                   suffix="TRY"
                   onChange={(v) => set("additionalDirectCostTry", v)}
                 />
-                <NumberField
-                  label="Monthly overhead"
-                  value={input.monthlyOverheadTry}
-                  suffix="TRY"
-                  onChange={(v) => set("monthlyOverheadTry", v)}
-                />
-                <NumberField
-                  label="Expected monthly orders"
-                  value={input.expectedMonthlyOrders}
-                  suffix="ORDERS"
-                  onChange={(v) => set("expectedMonthlyOrders", v)}
-                />
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium text-stone-600">
-                    Overhead allocation
-                  </span>
-                  <select
-                    className="field"
-                    value={input.overheadAllocationMethod}
-                    onChange={(event) =>
-                      set("overheadAllocationMethod", event.target.value)
-                    }
-                  >
-                    <option>EXPECTED_SALES</option>
-                    <option>ACTUAL_SALES</option>
-                    <option>NONE</option>
-                    <option>MANUAL_PER_ORDER</option>
-                    <option>REVENUE_WEIGHTED</option>
-                  </select>
-                </label>
-                {input.overheadAllocationMethod === "ACTUAL_SALES" && (
-                  <NumberField
-                    label="Actual completed orders"
-                    value={input.actualMonthlyOrders}
-                    suffix="ORDERS"
-                    onChange={(v) => set("actualMonthlyOrders", v)}
-                  />
-                )}
-                {input.overheadAllocationMethod === "MANUAL_PER_ORDER" && (
-                  <NumberField
-                    label="Manual overhead per order"
-                    value={input.manualOverheadPerOrderTry}
-                    suffix="TRY"
-                    onChange={(v) => set("manualOverheadPerOrderTry", v)}
-                  />
-                )}
                 <NumberField
                   label="Income-tax planning reserve"
                   value={input.taxReserveRate}
@@ -1113,7 +1080,19 @@ export function CalculatorWorkspace({
                 <Deduction
                   label="Packaging"
                   value={planTotals.packaging}
-                  description="Per-product packaging recorded in the latest cost version."
+                  displayValue={
+                    annualPackagingBudgetIncluded
+                      ? "$0.00 · Included in annual budget"
+                      : undefined
+                  }
+                  missingOverride={
+                    annualPackagingBudgetIncluded ? false : undefined
+                  }
+                  description={
+                    annualPackagingBudgetIncluded
+                      ? "The annual packaging-supplies budget is deducted under Business overhead, so product packaging is not repeated here."
+                      : "Per-product packaging recorded in the latest cost version."
+                  }
                   source={planningSources.products}
                   href="/products"
                 />
@@ -1456,7 +1435,14 @@ export function CalculatorWorkspace({
             </div>
           </section>
           <ProfitabilitySimulator
-            products={products.filter((product) => product.currency === "USD")}
+            products={products
+              .filter((product) => product.currency === "USD")
+              .map((product) => ({
+                ...product,
+                packagingCostTry: annualPackagingBudgetIncluded
+                  ? "0"
+                  : product.packagingCostTry,
+              }))}
             baseInput={planCalculationInput}
             thresholds={profitabilityThresholds}
             targetsSource={profitabilityTargetsSource}

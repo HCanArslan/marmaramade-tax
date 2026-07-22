@@ -18,6 +18,25 @@ export interface RecurringBusinessCostInput {
   vatRate: DecimalInput;
 }
 
+export const ANNUAL_BUSINESS_BUDGET_IDS = {
+  mukellef: "annual_budget_mukellef",
+  chatgpt: "annual_budget_chatgpt",
+  packaging: "annual_budget_packaging",
+  etsy: "annual_budget_etsy",
+} as const;
+
+export const ANNUAL_BUSINESS_BUDGET_DEFAULTS = {
+  mukellefMonthlyNetTry: "2999",
+  mukellefVatRate: "20",
+  chatgptMonthlyGrossUsd: "24",
+  packagingAnnualTry: "1500",
+  etsyMonthlyTry: "480",
+} as const;
+
+export const annualBusinessBudgetIds = Object.values(
+  ANNUAL_BUSINESS_BUDGET_IDS,
+);
+
 export function monthStartUtc(value: Date, timeZone = "Europe/Istanbul") {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,

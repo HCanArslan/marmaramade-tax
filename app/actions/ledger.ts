@@ -21,7 +21,11 @@ import { defaultCalculatorInput } from "@/lib/domain/defaults";
 import { calculateProductCost } from "@/lib/domain/product-cost";
 import { optimizeProductMix } from "@/lib/goals/planner";
 import Decimal from "decimal.js";
-import { monthStartUtc } from "@/lib/domain/overhead";
+import {
+  ANNUAL_BUSINESS_BUDGET_IDS,
+  annualBusinessBudgetIds,
+  monthStartUtc,
+} from "@/lib/domain/overhead";
 import type { Prisma } from "@/generated/prisma/client";
 
 const text = z.string().trim().min(1);
@@ -2364,10 +2368,93 @@ const recurringBusinessCostSchema = z.object({
   notes: optionalText,
 });
 
+const annualBusinessBudgetSchema = z.object({
+  mukellefMonthlyNetTry: nonNegativeNumber,
+  mukellefVatRate: nonNegativeNumber.refine((value) => value <= 100),
+  chatgptMonthlyGrossUsd: nonNegativeNumber,
+  packagingAnnualTry: nonNegativeNumber,
+  etsyMonthlyTry: nonNegativeNumber,
+});
+
 function revalidateRecurringBusinessCosts() {
   revalidatePath("/business");
   revalidatePath("/calculator");
   revalidatePath("/");
+}
+
+export async function saveAnnualBusinessBudgetAction(formData: FormData) {
+  const actor = await adminActor("/business");
+  const value = annualBusinessBudgetSchema.parse(Object.fromEntries(formData));
+  const effectiveFrom = new Date();
+  const rows = [
+    {
+      id: ANNUAL_BUSINESS_BUDGET_IDS.mukellef,
+      name: "Mükellef.co business package",
+      category: "ACCOUNTING",
+      amount: value.mukellefMonthlyNetTry,
+      currency: "TRY",
+      billingFrequency: "MONTHLY",
+      vatRate: value.mukellefVatRate,
+      notes:
+        "Company formation, e-invoice, first-year 1,000 credits, e-signature, pre-accounting, digital documents, online accounting, trademark analysis and 1,200 transactions/year.",
+    },
+    {
+      id: ANNUAL_BUSINESS_BUDGET_IDS.chatgpt,
+      name: "ChatGPT Plus",
+      category: "SOFTWARE",
+      amount: value.chatgptMonthlyGrossUsd,
+      currency: "USD",
+      billingFrequency: "MONTHLY",
+      vatRate: 0,
+      notes:
+        "Monthly gross cash price; no additional VAT is added by the plan.",
+    },
+    {
+      id: ANNUAL_BUSINESS_BUDGET_IDS.packaging,
+      name: "Annual packaging supplies budget",
+      category: "OTHER",
+      amount: value.packagingAnnualTry,
+      currency: "TRY",
+      billingFrequency: "ANNUAL",
+      vatRate: 0,
+      notes:
+        "Annual supplies budget. Legacy monthly overhead and Etsy assumptions are not added to it.",
+    },
+    {
+      id: ANNUAL_BUSINESS_BUDGET_IDS.etsy,
+      name: "Etsy business subscription",
+      category: "SOFTWARE",
+      amount: value.etsyMonthlyTry,
+      currency: "TRY",
+      billingFrequency: "MONTHLY",
+      vatRate: 0,
+      notes: "Monthly gross cash price used in the annual sell-all plan.",
+    },
+  ];
+
+  await prisma.$transaction(async (tx) => {
+    await tx.recurringBusinessCost.updateMany({
+      where: { id: { notIn: annualBusinessBudgetIds } },
+      data: { includeInSalesPlan: false },
+    });
+    for (const row of rows) {
+      await tx.recurringBusinessCost.upsert({
+        where: { id: row.id },
+        create: { ...row, includeInSalesPlan: true, effectiveFrom },
+        update: { ...row, includeInSalesPlan: true, effectiveTo: null },
+      });
+    }
+    await tx.auditLog.create({
+      data: {
+        entityType: "AnnualBusinessBudget",
+        entityId: "annual_business_budget",
+        action: "UPDATED",
+        actor,
+        afterJson: JSON.stringify(value),
+      },
+    });
+  });
+  revalidateRecurringBusinessCosts();
 }
 
 export async function createRecurringBusinessCostAction(formData: FormData) {

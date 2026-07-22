@@ -5,8 +5,8 @@ import { defaultCalculatorInput } from "@/lib/domain/defaults";
 import { applyFeeProfile } from "@/lib/domain/fee-profile";
 import { defaultProfitabilityThresholds } from "@/lib/domain/profitability";
 import {
+  annualBusinessBudgetIds,
   annualizeRecurringBusinessCost,
-  monthStartUtc,
 } from "@/lib/domain/overhead";
 import { getWeeklyUsdTryRate } from "@/lib/exchange-rate";
 import { resolveListingPricing } from "@/lib/etsy/pricing";
@@ -18,8 +18,6 @@ export default async function CalculatorPage() {
   const [
     products,
     savedRate,
-    overhead,
-    businessProfile,
     legalProfile,
     shippingQuotes,
     customsQuotes,
@@ -43,17 +41,6 @@ export default async function CalculatorPage() {
     prisma.exchangeRateSnapshot.findFirst({
       where: { baseCurrency: "USD", quoteCurrency: "TRY" },
       orderBy: { capturedAt: "desc" },
-    }),
-    prisma.monthlyOverhead.findFirst({
-      where: { month: { lte: monthStartUtc(now) } },
-      orderBy: { month: "desc" },
-    }),
-    prisma.businessProfileVersion.findFirst({
-      where: {
-        effectiveFrom: { lte: now },
-        OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
-      },
-      orderBy: { effectiveFrom: "desc" },
     }),
     prisma.legalOperatingProfile.findFirst({
       orderBy: { effectiveFrom: "desc" },
@@ -170,6 +157,7 @@ export default async function CalculatorPage() {
     }),
     prisma.recurringBusinessCost.findMany({
       where: {
+        id: { in: annualBusinessBudgetIds },
         includeInSalesPlan: true,
         effectiveFrom: { lte: now },
         OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
@@ -321,15 +309,6 @@ export default async function CalculatorPage() {
     });
   });
 
-  const monthlyOverhead = overhead
-    ? new Decimal(overhead.accountantTry.toString())
-        .plus(overhead.socialSecurityTry.toString())
-        .plus(overhead.softwareTry.toString())
-        .plus(overhead.bankingTry.toString())
-        .plus(overhead.officeTry.toString())
-        .plus(overhead.otherTry.toString())
-        .plus(overhead.etsyPlusTry.toString())
-    : new Decimal(0);
   const customsDuty = customs
     ? (customs.customsDutyAmount ??
       customs.declaredValue.mul(customs.customsDutyRate).div(100))
@@ -433,13 +412,8 @@ export default async function CalculatorPage() {
       }}
       planningDefaults={{
         ...feeDefaults,
-        monthlyOverheadTry: monthlyOverhead.toString(),
-        expectedMonthlyOrders: String(
-          overhead?.expectedSales ||
-            legalProfile?.expectedMonthlyOrders ||
-            businessProfile?.expectedMonthlyOrders ||
-            1,
-        ),
+        monthlyOverheadTry: "0",
+        expectedMonthlyOrders: "1",
         taxReserveRate:
           planningTaxRule?.rate?.toString() ??
           legalProfile?.incomeTaxReserveRate.toString() ??
@@ -481,11 +455,9 @@ export default async function CalculatorPage() {
           etgbCost?.deductFromProfit ??
           assumptionProfile?.includeEtgbInSellerProfit ??
           false,
-        overheadAllocationMethod:
-          overhead?.allocationMethod ?? "EXPECTED_SALES",
-        actualMonthlyOrders: String(overhead?.actualSales ?? 0),
-        manualOverheadPerOrderTry:
-          overhead?.manualPerOrderTry?.toString() ?? "0",
+        overheadAllocationMethod: "NONE",
+        actualMonthlyOrders: "0",
+        manualOverheadPerOrderTry: "0",
       }}
     />
   );

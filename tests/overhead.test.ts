@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import Decimal from "decimal.js";
 import { calculate } from "@/lib/domain/calculator";
 import { defaultCalculatorInput } from "@/lib/domain/defaults";
 import {
@@ -13,7 +14,7 @@ import {
 const source = (file: string) =>
   readFile(path.join(process.cwd(), file), "utf8");
 
-describe("monthly overhead auditability", () => {
+describe("annual business spending", () => {
   it("normalizes eligibility to the current Istanbul planning month", () => {
     expect(
       monthStartUtc(new Date("2026-07-21T12:00:00+03:00")).toISOString(),
@@ -78,6 +79,35 @@ describe("monthly overhead auditability", () => {
     expect(chatGpt.annualGrossTry.toString()).toBe("11307.216");
   });
 
+  it("matches the initial yearly budget without duplicate legacy costs", () => {
+    const rate = "47.1134";
+    const mukellef = annualizeRecurringBusinessCost(
+      {
+        amount: "2999",
+        currency: "TRY",
+        billingFrequency: "MONTHLY",
+        vatRate: "20",
+      },
+      rate,
+    );
+    const chatGpt = annualizeRecurringBusinessCost(
+      {
+        amount: "24",
+        currency: "USD",
+        billingFrequency: "MONTHLY",
+        vatRate: "0",
+      },
+      rate,
+    );
+    const total = mukellef.annualGrossTry
+      .plus(chatGpt.annualGrossTry)
+      .plus("1500")
+      .plus(new Decimal("480").mul(12));
+    expect(mukellef.annualGrossTry.toString()).toBe("43185.6");
+    expect(chatGpt.annualGrossNative.toString()).toBe("288");
+    expect(total.toString()).toBe("64014.2592");
+  });
+
   it("deducts the annual total exactly once across every planned unit", () => {
     const allocation = resolveAnnualPlanOverhead("54507.216", "12");
     expect(allocation.totalPlanOverheadTry.toString()).toBe("54507.216");
@@ -106,30 +136,35 @@ describe("monthly overhead auditability", () => {
     expect(allocation.manualOverheadPerOrderTry.toString()).toBe("0");
   });
 
-  it("excludes future overhead records and does not fall back to unrelated profiles", async () => {
+  it("uses only the canonical annual budget and ignores monthly records", async () => {
     const calculatorPage = await source("app/calculator/page.tsx");
-    expect(calculatorPage).toContain(
-      "where: { month: { lte: monthStartUtc(now) } }",
-    );
     expect(calculatorPage).toContain("prisma.recurringBusinessCost.findMany");
+    expect(calculatorPage).toContain("id: { in: annualBusinessBudgetIds }");
+    expect(calculatorPage).not.toContain("prisma.monthlyOverhead");
+    expect(calculatorPage).toContain('monthlyOverheadTry: "0"');
+    expect(calculatorPage).toContain('overheadAllocationMethod: "NONE"');
     expect(calculatorPage).toContain(
       "No annual recurring business costs configured; no Sales Plan overhead deducted",
     );
     expect(calculatorPage).not.toContain("Fallback from business profile");
   });
 
-  it("shows saved records and exact allocation evidence without phantom defaults", async () => {
-    const [business, calculator, actions] = await Promise.all([
+  it("shows one compact annual budget with the supplied starting values", async () => {
+    const [business, calculator, actions, migration] = await Promise.all([
       source("app/business/page.tsx"),
       source("components/calculator-workspace.tsx"),
       source("app/actions/ledger.ts"),
+      source(
+        "prisma/migrations/20260722120000_seed_annual_business_budget/migration.sql",
+      ),
     ]);
-    expect(business).toContain("Saved monthly overhead");
-    expect(business).toContain("Future · not used yet");
-    expect(business).toContain('defaultValue="0"');
-    expect(business).not.toContain('name === "etsyPlusTry" ? "500"');
-    expect(business).toContain("Annual sell-all planning");
-    expect(business).toContain("Recurring business costs");
+    expect(business).toContain("Yearly business spending");
+    expect(business).toContain("One source of truth");
+    expect(business).toContain("Save yearly budget");
+    expect(business).toContain("What Mükellef includes");
+    expect(calculator).not.toContain('label="Monthly overhead"');
+    expect(calculator).toContain("annualPackagingBudgetIncluded");
+    expect(calculator).toContain("Included in annual budget");
     expect(calculator).toContain("Annual recurring-cost breakdown");
     expect(calculator).toContain("Annual sell-all scenario");
     expect(calculator).toContain('value="One year"');
@@ -138,10 +173,12 @@ describe("monthly overhead auditability", () => {
     expect(calculator).not.toContain("Exclude overhead from this plan");
     expect(calculator).toContain("baseInput={planCalculationInput}");
     expect(calculator).toContain("showOverheadSensitivity={false}");
-    expect(actions).toContain("deleteMonthlyOverheadAction");
-    expect(actions).toContain("createRecurringBusinessCostAction");
-    expect(actions).toContain("updateRecurringBusinessCostAction");
-    expect(actions).toContain("deleteRecurringBusinessCostAction");
+    expect(actions).toContain("saveAnnualBusinessBudgetAction");
+    expect(actions).toContain("id: { notIn: annualBusinessBudgetIds }");
+    expect(migration).toContain("2999, 'TRY', 'MONTHLY', 20");
+    expect(migration).toContain("24, 'USD', 'MONTHLY', 0");
+    expect(migration).toContain("1500, 'TRY', 'ANNUAL', 0");
+    expect(migration).toContain("480, 'TRY', 'MONTHLY', 0");
     expect(actions).toContain("economicHourlyRateTry");
   });
 });
