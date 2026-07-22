@@ -4,7 +4,10 @@ import { requireAdmin } from "@/lib/auth/require-admin";
 import { defaultCalculatorInput } from "@/lib/domain/defaults";
 import { applyFeeProfile } from "@/lib/domain/fee-profile";
 import { defaultProfitabilityThresholds } from "@/lib/domain/profitability";
-import { monthStartUtc, monthlyOverheadTotalTry } from "@/lib/domain/overhead";
+import {
+  annualizeRecurringBusinessCost,
+  monthStartUtc,
+} from "@/lib/domain/overhead";
 import { getWeeklyUsdTryRate } from "@/lib/exchange-rate";
 import { resolveListingPricing } from "@/lib/etsy/pricing";
 import { prisma } from "@/lib/prisma";
@@ -27,6 +30,7 @@ export default async function CalculatorPage() {
     externalComparison,
     planningTaxRule,
     exportVatRule,
+    recurringBusinessCosts,
   ] = await Promise.all([
     prisma.product.findMany({
       where: { active: true, etsyListingLinks: { some: {} } },
@@ -164,6 +168,14 @@ export default async function CalculatorPage() {
       },
       orderBy: { effectiveFrom: "desc" },
     }),
+    prisma.recurringBusinessCost.findMany({
+      where: {
+        includeInSalesPlan: true,
+        effectiveFrom: { lte: now },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
+      },
+      orderBy: [{ category: "asc" }, { name: "asc" }],
+    }),
   ]);
 
   const shipping = shippingQuotes.find((quote) => quote.productId === null);
@@ -171,6 +183,33 @@ export default async function CalculatorPage() {
   const etgbCost = etgbCosts.find((record) => record.productId === null);
 
   const exchangeRate = await getWeeklyUsdTryRate(savedRate);
+  const annualOverheadItems = recurringBusinessCosts.map((cost) => {
+    const annualized = annualizeRecurringBusinessCost(
+      {
+        amount: cost.amount,
+        currency: cost.currency as "TRY" | "USD",
+        billingFrequency: cost.billingFrequency as "MONTHLY" | "ANNUAL",
+        vatRate: cost.vatRate,
+      },
+      exchangeRate.rate,
+    );
+    return {
+      id: cost.id,
+      name: cost.name,
+      category: cost.category,
+      amount: cost.amount.toString(),
+      currency: cost.currency as "TRY" | "USD",
+      billingFrequency: cost.billingFrequency,
+      vatRate: cost.vatRate.toString(),
+      annualGrossNative: annualized.annualGrossNative.toString(),
+      annualGrossTry: annualized.annualGrossTry.toString(),
+      notes: cost.notes,
+    };
+  });
+  const annualOverheadTotalTry = annualOverheadItems.reduce(
+    (total, cost) => total.plus(cost.annualGrossTry),
+    new Decimal(0),
+  );
   const feeDefaults = applyFeeProfile(
     defaultCalculatorInput,
     feeProfile?.rules ?? [],
@@ -343,23 +382,12 @@ export default async function CalculatorPage() {
           ? `Effective profitability profile: ${assumptionProfile.name}`
           : "Built-in editable defaults; save a profitability profile in Settings"
       }
-      overheadEvidence={
-        overhead
+      annualOverheadEvidence={
+        annualOverheadItems.length > 0
           ? {
-              month: overhead.month.toISOString(),
-              accountantTry: overhead.accountantTry.toString(),
-              socialSecurityTry: overhead.socialSecurityTry.toString(),
-              softwareTry: overhead.softwareTry.toString(),
-              bankingTry: overhead.bankingTry.toString(),
-              officeTry: overhead.officeTry.toString(),
-              otherTry: overhead.otherTry.toString(),
-              etsyPlusTry: overhead.etsyPlusTry.toString(),
-              monthlyTotalTry: monthlyOverheadTotalTry(overhead).toString(),
-              allocationMethod: overhead.allocationMethod,
-              expectedSales: overhead.expectedSales,
-              actualSales: overhead.actualSales,
-              manualPerOrderTry: overhead.manualPerOrderTry?.toString() ?? null,
-              notes: overhead.notes,
+              annualTotalTry: annualOverheadTotalTry.toString(),
+              usdTryRate: exchangeRate.rate,
+              items: annualOverheadItems,
             }
           : null
       }
@@ -388,9 +416,10 @@ export default async function CalculatorPage() {
           : customs
             ? `Latest current quote: ${customs.destinationCountry} · ${customs.hsCode} · ${customs.quoteDate.toLocaleDateString("en-GB")}`
             : "No current non-example USD customs quote",
-        overhead: overhead
-          ? `Monthly overhead saved for ${overhead.month.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}`
-          : "No current monthly overhead record; no overhead deducted",
+        overhead:
+          annualOverheadItems.length > 0
+            ? `${annualOverheadItems.length} active recurring business cost(s), annualized at ${exchangeRate.rate} TRY/USD`
+            : "No annual recurring business costs configured; no Sales Plan overhead deducted",
         fees: feeProfile
           ? `Etsy fee profile: ${feeProfile.name}`
           : "Built-in Etsy planning assumptions; save the official profile",

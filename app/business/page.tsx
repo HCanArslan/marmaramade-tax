@@ -1,7 +1,10 @@
 import {
+  createRecurringBusinessCostAction,
   createLegalProfileAction,
   deleteMonthlyOverheadAction,
+  deleteRecurringBusinessCostAction,
   saveMonthlyOverheadAction,
+  updateRecurringBusinessCostAction,
 } from "@/app/actions/ledger";
 import { legalProfileWarnings } from "@/lib/compliance";
 import { requireAdmin } from "@/lib/auth/require-admin";
@@ -11,8 +14,13 @@ import {
   businessConsistencyWarnings,
 } from "@/lib/business/consistency";
 import { createBusinessPersonAction } from "@/app/actions/operations";
-import { monthStartUtc, monthlyOverheadTotalTry } from "@/lib/domain/overhead";
+import {
+  annualizeRecurringBusinessCost,
+  monthStartUtc,
+  monthlyOverheadTotalTry,
+} from "@/lib/domain/overhead";
 import { formatMoney } from "@/lib/domain/money";
+import Decimal from "decimal.js";
 
 const overheadFields = [
   ["accountantTry", "Accountant / bookkeeping (TRY)"],
@@ -27,27 +35,64 @@ const overheadFields = [
 export default async function BusinessPage() {
   await requireAdmin({ redirectTo: "/business" });
   const currentMonth = monthStartUtc(new Date());
-  const [profiles, businessProfile, people, monthlyOverheads] =
-    await Promise.all([
-      prisma.legalOperatingProfile.findMany({
-        orderBy: { effectiveFrom: "desc" },
-      }),
-      prisma.businessProfile.findFirst({
-        where: { active: true },
-        orderBy: { effectiveFrom: "desc" },
-      }),
-      prisma.businessPerson.findMany({
-        where: { active: true },
-        include: {
-          roles: { where: { effectiveTo: null }, orderBy: { role: "asc" } },
-        },
-        orderBy: { fullName: "asc" },
-      }),
-      prisma.monthlyOverhead.findMany({ orderBy: { month: "desc" } }),
-    ]);
+  const [
+    profiles,
+    businessProfile,
+    people,
+    monthlyOverheads,
+    recurringBusinessCosts,
+    latestUsdTry,
+  ] = await Promise.all([
+    prisma.legalOperatingProfile.findMany({
+      orderBy: { effectiveFrom: "desc" },
+    }),
+    prisma.businessProfile.findFirst({
+      where: { active: true },
+      orderBy: { effectiveFrom: "desc" },
+    }),
+    prisma.businessPerson.findMany({
+      where: { active: true },
+      include: {
+        roles: { where: { effectiveTo: null }, orderBy: { role: "asc" } },
+      },
+      orderBy: { fullName: "asc" },
+    }),
+    prisma.monthlyOverhead.findMany({ orderBy: { month: "desc" } }),
+    prisma.recurringBusinessCost.findMany({
+      orderBy: [{ includeInSalesPlan: "desc" }, { effectiveFrom: "desc" }],
+    }),
+    prisma.exchangeRateSnapshot.findFirst({
+      where: { baseCurrency: "USD", quoteCurrency: "TRY" },
+      orderBy: { capturedAt: "desc" },
+    }),
+  ]);
   const activeOverhead = monthlyOverheads.find(
     (item) => item.month <= currentMonth,
   );
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const annualPlanningTotalTry = recurringBusinessCosts
+    .filter(
+      (item) =>
+        item.includeInSalesPlan &&
+        item.effectiveFrom <= now &&
+        (!item.effectiveTo || item.effectiveTo > now),
+    )
+    .reduce(
+      (total, item) =>
+        total.plus(
+          annualizeRecurringBusinessCost(
+            {
+              amount: item.amount,
+              currency: item.currency as "TRY" | "USD",
+              billingFrequency: item.billingFrequency as "MONTHLY" | "ANNUAL",
+              vatRate: item.vatRate,
+            },
+            latestUsdTry?.rate ?? 1,
+          ).annualGrossTry,
+        ),
+      new Decimal(0),
+    );
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <header>
@@ -277,13 +322,106 @@ export default async function BusinessPage() {
           </button>
         </form>
       </section>
+      <section className="card p-5" id="annual-sales-plan-costs">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="eyebrow">Annual sell-all planning</p>
+            <h2 className="mt-1 font-semibold">Recurring business costs</h2>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-stone-500">
+              Enter each cost in its real currency and billing frequency. Sales
+              Plan annualizes monthly charges, adds entered VAT, converts USD at
+              the planning rate, and deducts the complete yearly total exactly
+              once.
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-stone-500">Current annual total</p>
+            <p className="font-semibold">
+              {formatMoney(annualPlanningTotalTry, "TRY")}
+            </p>
+          </div>
+        </div>
+        <form
+          action={createRecurringBusinessCostAction}
+          className="mt-5 grid gap-3 sm:grid-cols-4"
+        >
+          <RecurringCostFields today={today} />
+          <button className="rounded-xl bg-jade px-3 py-2 text-sm text-white">
+            Add annual planning cost
+          </button>
+        </form>
+        <div className="mt-5 space-y-3">
+          {recurringBusinessCosts.map((cost) => {
+            const annualized = annualizeRecurringBusinessCost(
+              {
+                amount: cost.amount,
+                currency: cost.currency as "TRY" | "USD",
+                billingFrequency: cost.billingFrequency as "MONTHLY" | "ANNUAL",
+                vatRate: cost.vatRate,
+              },
+              latestUsdTry?.rate ?? 1,
+            );
+            return (
+              <article
+                className="rounded-2xl border bg-stone-50/60 p-4"
+                key={cost.id}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold">{cost.name}</h3>
+                    <p className="mt-1 text-xs text-stone-500">
+                      {cost.amount.toString()} {cost.currency} ·{" "}
+                      {cost.billingFrequency.toLowerCase()} · VAT{" "}
+                      {cost.vatRate.toString()}%
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span className="pill">
+                      {cost.includeInSalesPlan ? "Included" : "Excluded"}
+                    </span>
+                    <p className="mt-1 text-sm font-semibold">
+                      {formatMoney(annualized.annualGrossTry, "TRY")} / year
+                    </p>
+                  </div>
+                </div>
+                <form
+                  action={updateRecurringBusinessCostAction}
+                  className="mt-4 grid gap-3 sm:grid-cols-4"
+                >
+                  <input name="id" type="hidden" value={cost.id} />
+                  <RecurringCostFields cost={cost} today={today} />
+                  <button className="rounded-xl bg-jade px-3 py-2 text-sm text-white">
+                    Save cost
+                  </button>
+                </form>
+                <form
+                  action={deleteRecurringBusinessCostAction}
+                  className="mt-3"
+                >
+                  <input name="id" type="hidden" value={cost.id} />
+                  <button className="rounded-xl border border-red-200 bg-white px-3 py-2 text-xs text-red-700">
+                    Delete cost
+                  </button>
+                </form>
+              </article>
+            );
+          })}
+          {!recurringBusinessCosts.length && (
+            <p className="rounded-xl border border-dashed p-5 text-sm text-stone-500">
+              No annual planning costs are configured. Sales Plan will deduct
+              zero instead of inventing an amount. Example: Mükellef · 36,000
+              TRY · annual · enter invoice VAT; ChatGPT · 20 USD · monthly.
+            </p>
+          )}
+        </div>
+      </section>
       <section className="card p-5">
         <h2 className="font-semibold">Sole-proprietorship monthly overhead</h2>
         <p className="mt-1 max-w-3xl text-xs leading-5 text-stone-500">
-          Enter recurring business costs for one month. The Calculator divides
-          their total by expected monthly orders. Leave an amount at zero only
-          when that category genuinely has no cost; this is planning data and
-          does not determine deductibility or SGK treatment.
+          Quick calculator and legacy per-order analysis only. Annual Sales Plan
+          uses the recurring costs above. Leave an amount at zero only when that
+          category genuinely has no cost; this does not determine deductibility
+          or SGK treatment.
         </p>
         <form
           action={saveMonthlyOverheadAction}
@@ -558,6 +696,135 @@ export default async function BusinessPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function RecurringCostFields({
+  cost,
+  today,
+}: {
+  cost?: {
+    name: string;
+    category: string;
+    amount: Decimal;
+    currency: string;
+    billingFrequency: string;
+    vatRate: Decimal;
+    includeInSalesPlan: boolean;
+    effectiveFrom: Date;
+    effectiveTo: Date | null;
+    notes: string | null;
+  };
+  today: string;
+}) {
+  return (
+    <>
+      <label className="text-xs text-stone-500 sm:col-span-2">
+        Cost name
+        <input
+          className="field mt-1"
+          name="name"
+          required
+          defaultValue={cost?.name ?? ""}
+          placeholder="Mükellef or ChatGPT"
+        />
+      </label>
+      <label className="text-xs text-stone-500">
+        Category
+        <select
+          className="field mt-1"
+          name="category"
+          defaultValue={cost?.category ?? "ACCOUNTING"}
+        >
+          <option>ACCOUNTING</option>
+          <option>SOFTWARE</option>
+          <option>BANKING</option>
+          <option>OFFICE</option>
+          <option>OTHER</option>
+        </select>
+      </label>
+      <label className="text-xs text-stone-500">
+        Amount before entered VAT
+        <input
+          className="field mt-1"
+          name="amount"
+          type="number"
+          min="0"
+          step="0.01"
+          required
+          defaultValue={cost?.amount.toString() ?? "0"}
+        />
+      </label>
+      <label className="text-xs text-stone-500">
+        Currency
+        <select
+          className="field mt-1"
+          name="currency"
+          defaultValue={cost?.currency ?? "TRY"}
+        >
+          <option>TRY</option>
+          <option>USD</option>
+        </select>
+      </label>
+      <label className="text-xs text-stone-500">
+        Billing frequency
+        <select
+          className="field mt-1"
+          name="billingFrequency"
+          defaultValue={cost?.billingFrequency ?? "ANNUAL"}
+        >
+          <option>ANNUAL</option>
+          <option>MONTHLY</option>
+        </select>
+      </label>
+      <label className="text-xs text-stone-500">
+        VAT added to cash cost %
+        <input
+          className="field mt-1"
+          name="vatRate"
+          type="number"
+          min="0"
+          max="100"
+          step="0.01"
+          defaultValue={cost?.vatRate.toString() ?? "0"}
+        />
+      </label>
+      <label className="text-xs text-stone-500">
+        Effective from
+        <input
+          className="field mt-1"
+          name="effectiveFrom"
+          type="date"
+          required
+          defaultValue={cost?.effectiveFrom.toISOString().slice(0, 10) ?? today}
+        />
+      </label>
+      <label className="text-xs text-stone-500">
+        Effective to (optional)
+        <input
+          className="field mt-1"
+          name="effectiveTo"
+          type="date"
+          defaultValue={cost?.effectiveTo?.toISOString().slice(0, 10) ?? ""}
+        />
+      </label>
+      <label className="text-xs text-stone-500 sm:col-span-2">
+        Notes
+        <input
+          className="field mt-1"
+          name="notes"
+          defaultValue={cost?.notes ?? ""}
+        />
+      </label>
+      <label className="flex items-center gap-2 rounded-xl border bg-white px-3 text-sm">
+        <input
+          name="includeInSalesPlan"
+          type="checkbox"
+          defaultChecked={cost?.includeInSalesPlan ?? true}
+        />
+        Include in annual Sales Plan
+      </label>
+    </>
   );
 }
 function Select({

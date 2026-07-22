@@ -2348,6 +2348,91 @@ export async function deleteMonthlyOverheadAction(formData: FormData) {
   revalidatePath("/");
 }
 
+const recurringBusinessCostSchema = z.object({
+  name: text,
+  category: z.enum(["ACCOUNTING", "SOFTWARE", "BANKING", "OFFICE", "OTHER"]),
+  amount: nonNegativeNumber,
+  currency: z.enum(["TRY", "USD"]),
+  billingFrequency: z.enum(["MONTHLY", "ANNUAL"]),
+  vatRate: nonNegativeNumber.refine((value) => value <= 100),
+  includeInSalesPlan: checkbox,
+  effectiveFrom: date,
+  effectiveTo: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.coerce.date().optional(),
+  ),
+  notes: optionalText,
+});
+
+function revalidateRecurringBusinessCosts() {
+  revalidatePath("/business");
+  revalidatePath("/calculator");
+  revalidatePath("/");
+}
+
+export async function createRecurringBusinessCostAction(formData: FormData) {
+  const actor = await adminActor("/business");
+  const value = recurringBusinessCostSchema.parse(Object.fromEntries(formData));
+  const row = await prisma.recurringBusinessCost.create({ data: value });
+  await prisma.auditLog.create({
+    data: {
+      entityType: "RecurringBusinessCost",
+      entityId: row.id,
+      action: "CREATED",
+      actor,
+      afterJson: JSON.stringify(row),
+    },
+  });
+  revalidateRecurringBusinessCosts();
+}
+
+export async function updateRecurringBusinessCostAction(formData: FormData) {
+  const actor = await adminActor("/business");
+  const id = text.parse(formData.get("id"));
+  const value = recurringBusinessCostSchema.parse(Object.fromEntries(formData));
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.recurringBusinessCost.findUniqueOrThrow({
+      where: { id },
+    });
+    const after = await tx.recurringBusinessCost.update({
+      where: { id },
+      data: value,
+    });
+    await tx.auditLog.create({
+      data: {
+        entityType: "RecurringBusinessCost",
+        entityId: id,
+        action: "UPDATED",
+        actor,
+        beforeJson: JSON.stringify(before),
+        afterJson: JSON.stringify(after),
+      },
+    });
+  });
+  revalidateRecurringBusinessCosts();
+}
+
+export async function deleteRecurringBusinessCostAction(formData: FormData) {
+  const actor = await adminActor("/business");
+  const id = text.parse(formData.get("id"));
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.recurringBusinessCost.findUniqueOrThrow({
+      where: { id },
+    });
+    await tx.recurringBusinessCost.delete({ where: { id } });
+    await tx.auditLog.create({
+      data: {
+        entityType: "RecurringBusinessCost",
+        entityId: id,
+        action: "DELETED",
+        actor,
+        beforeJson: JSON.stringify(before),
+      },
+    });
+  });
+  revalidateRecurringBusinessCosts();
+}
+
 export async function runInventoryGoalAction(formData: FormData) {
   const actor = await adminActor("/goals");
   const v = z

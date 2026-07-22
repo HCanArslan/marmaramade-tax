@@ -431,6 +431,25 @@ model MonthlyOverhead {
   updatedAt         DateTime                 @updatedAt
 }
 
+model RecurringBusinessCost {
+  id                 String    @id @default(cuid())
+  name               String
+  category           String
+  amount             Decimal
+  currency           String    @default("TRY")
+  billingFrequency   String    @default("ANNUAL")
+  vatRate            Decimal   @default(0)
+  includeInSalesPlan Boolean   @default(true)
+  effectiveFrom      DateTime
+  effectiveTo        DateTime?
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([effectiveFrom, effectiveTo])
+  @@index([includeInSalesPlan])
+}
+
 model CostAssumptionProfile {
   id                              String    @id @default(cuid())
   name                            String

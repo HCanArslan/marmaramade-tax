@@ -4,9 +4,10 @@ import { describe, expect, it } from "vitest";
 import { calculate } from "@/lib/domain/calculator";
 import { defaultCalculatorInput } from "@/lib/domain/defaults";
 import {
+  annualizeRecurringBusinessCost,
   monthStartUtc,
   monthlyOverheadTotalTry,
-  resolvePlanOverhead,
+  resolveAnnualPlanOverhead,
 } from "@/lib/domain/overhead";
 
 const source = (file: string) =>
@@ -50,23 +51,41 @@ describe("monthly overhead auditability", () => {
     );
   });
 
-  it("deducts exactly three months of fixed overhead for a three-month plan", () => {
-    const allocation = resolvePlanOverhead({
-      treatment: "FULL_PERIOD",
-      monthlyOverheadTry: "6750",
-      horizonMonths: "3",
-      plannedUnits: "12",
-      configuredMethod: "EXPECTED_SALES",
-      expectedMonthlyOrders: "5",
-      actualMonthlyOrders: "0",
-      manualOverheadPerOrderTry: "0",
-    });
-    expect(allocation.totalPlanOverheadTry.toString()).toBe("20250");
-    expect(allocation.manualOverheadPerOrderTry.toString()).toBe("1687.5");
+  it("annualizes native-currency costs with their explicit VAT", () => {
+    const mukellef = annualizeRecurringBusinessCost(
+      {
+        amount: "36000",
+        currency: "TRY",
+        billingFrequency: "ANNUAL",
+        vatRate: "20",
+      },
+      "47.1134",
+    );
+    expect(mukellef.annualNetNative.toString()).toBe("36000");
+    expect(mukellef.annualVatNative.toString()).toBe("7200");
+    expect(mukellef.annualGrossTry.toString()).toBe("43200");
+
+    const chatGpt = annualizeRecurringBusinessCost(
+      {
+        amount: "20",
+        currency: "USD",
+        billingFrequency: "MONTHLY",
+        vatRate: "0",
+      },
+      "47.1134",
+    );
+    expect(chatGpt.annualGrossNative.toString()).toBe("240");
+    expect(chatGpt.annualGrossTry.toString()).toBe("11307.216");
+  });
+
+  it("deducts the annual total exactly once across every planned unit", () => {
+    const allocation = resolveAnnualPlanOverhead("54507.216", "12");
+    expect(allocation.totalPlanOverheadTry.toString()).toBe("54507.216");
+    expect(allocation.manualOverheadPerOrderTry.toString()).toBe("4542.268");
 
     const perUnit = calculate({
       ...defaultCalculatorInput,
-      monthlyOverheadTry: "6750",
+      monthlyOverheadTry: "0",
       overheadAllocationMethod: allocation.allocationMethod,
       manualOverheadPerOrderTry: allocation.manualOverheadPerOrderTry,
       usdTryRate: "47.1134",
@@ -75,32 +94,16 @@ describe("monthly overhead auditability", () => {
       perUnit.totals.allocatedBusinessOverheadUsd
         .mul(12)
         .mul("47.1134")
-        .eq("20250"),
+        .minus("54507.216")
+        .abs()
+        .lt("0.000001"),
     ).toBe(true);
   });
 
-  it("keeps per-order and excluded treatments mutually exclusive", () => {
-    const common = {
-      monthlyOverheadTry: "6750",
-      horizonMonths: "3",
-      plannedUnits: "12",
-      configuredMethod: "EXPECTED_SALES" as const,
-      expectedMonthlyOrders: "5",
-      actualMonthlyOrders: "0",
-      manualOverheadPerOrderTry: "0",
-    };
-    expect(
-      resolvePlanOverhead({
-        ...common,
-        treatment: "PER_ORDER",
-      }).totalPlanOverheadTry.toString(),
-    ).toBe("16200");
-    expect(
-      resolvePlanOverhead({
-        ...common,
-        treatment: "EXCLUDED",
-      }).totalPlanOverheadTry.toString(),
-    ).toBe("0");
+  it("does not invent annual overhead when no recurring costs exist", () => {
+    const allocation = resolveAnnualPlanOverhead("0", "12");
+    expect(allocation.totalPlanOverheadTry.toString()).toBe("0");
+    expect(allocation.manualOverheadPerOrderTry.toString()).toBe("0");
   });
 
   it("excludes future overhead records and does not fall back to unrelated profiles", async () => {
@@ -108,8 +111,9 @@ describe("monthly overhead auditability", () => {
     expect(calculatorPage).toContain(
       "where: { month: { lte: monthStartUtc(now) } }",
     );
+    expect(calculatorPage).toContain("prisma.recurringBusinessCost.findMany");
     expect(calculatorPage).toContain(
-      "No current monthly overhead record; no overhead deducted",
+      "No annual recurring business costs configured; no Sales Plan overhead deducted",
     );
     expect(calculatorPage).not.toContain("Fallback from business profile");
   });
@@ -124,16 +128,20 @@ describe("monthly overhead auditability", () => {
     expect(business).toContain("Future · not used yet");
     expect(business).toContain('defaultValue="0"');
     expect(business).not.toContain('name === "etsyPlusTry" ? "500"');
-    expect(calculator).toContain("Exact saved breakdown");
-    expect(calculator).toContain("Per planned order");
-    expect(calculator).toContain("Full plan-period overhead (recommended)");
-    expect(calculator).toContain("Exclude overhead from this plan");
-    expect(calculator).toContain("Full-period net profit deducts");
+    expect(business).toContain("Annual sell-all planning");
+    expect(business).toContain("Recurring business costs");
+    expect(calculator).toContain("Annual recurring-cost breakdown");
+    expect(calculator).toContain("Annual sell-all scenario");
+    expect(calculator).toContain('value="One year"');
+    expect(calculator).not.toContain("Full plan-period overhead");
+    expect(calculator).not.toContain("Planning horizon");
+    expect(calculator).not.toContain("Exclude overhead from this plan");
     expect(calculator).toContain("baseInput={planCalculationInput}");
-    expect(calculator).toContain(
-      'showOverheadSensitivity={planOverheadTreatment === "PER_ORDER"}',
-    );
+    expect(calculator).toContain("showOverheadSensitivity={false}");
     expect(actions).toContain("deleteMonthlyOverheadAction");
+    expect(actions).toContain("createRecurringBusinessCostAction");
+    expect(actions).toContain("updateRecurringBusinessCostAction");
+    expect(actions).toContain("deleteRecurringBusinessCostAction");
     expect(actions).toContain("economicHourlyRateTry");
   });
 });
