@@ -25,6 +25,10 @@ const optionalDecimal = z.preprocess(
   (value) => (value === "" ? undefined : value),
   decimal.optional(),
 );
+const optionalNonNegativeDecimal = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  decimal.refine((item) => !item.startsWith("-")).optional(),
+);
 const optionalDate = z.preprocess(
   (value) => (value === "" ? undefined : value),
   z.coerce.date().optional(),
@@ -91,6 +95,7 @@ export async function createBusinessPersonAction(formData: FormData) {
         "ACCOUNTANT",
         "OTHER",
       ]),
+      economicHourlyRateTry: optionalNonNegativeDecimal,
       notes: optionalText,
     })
     .parse(Object.fromEntries(formData));
@@ -104,6 +109,7 @@ export async function createBusinessPersonAction(formData: FormData) {
         create: {
           role: value.role,
           effectiveFrom: new Date(),
+          economicHourlyRateTry: value.economicHourlyRateTry,
           notes: value.notes,
         },
       },

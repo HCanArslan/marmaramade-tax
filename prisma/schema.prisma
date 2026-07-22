@@ -53,6 +53,7 @@ model ProductCostVersion {
   materialCostTry           Decimal
   laborHours                Decimal
   laborHourlyRateTry        Decimal
+  economicHourlyRateTry     Decimal?
   packagingCostTry          Decimal
   additionalDirectCostTry   Decimal
   notes                     String?
@@ -430,32 +431,68 @@ model MonthlyOverhead {
   updatedAt         DateTime                 @updatedAt
 }
 
+model RecurringBusinessCost {
+  id                 String    @id @default(cuid())
+  name               String
+  category           String
+  amount             Decimal
+  currency           String    @default("TRY")
+  billingFrequency   String    @default("ANNUAL")
+  vatRate            Decimal   @default(0)
+  includeInSalesPlan Boolean   @default(true)
+  effectiveFrom      DateTime
+  effectiveTo        DateTime?
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([effectiveFrom, effectiveTo])
+  @@index([includeInSalesPlan])
+}
+
 model CostAssumptionProfile {
-  id                           String    @id @default(cuid())
-  name                         String
-  saleValueUsd                 Decimal
-  productCostUsd               Decimal
-  packagingTry                 Decimal
-  domesticTransferTry          Decimal   @default(0)
-  internationalShippingUsd     Decimal
-  insuranceUsd                 Decimal   @default(0)
-  otherCarrierSurchargeUsd     Decimal   @default(0)
-  customsEstimateUsd           Decimal
-  includeCustomsInSellerProfit Boolean   @default(false)
-  estimatedEtgbFeeUsd          Decimal?
-  includeEtgbInSellerProfit    Boolean   @default(false)
-  etsyPlusMonthlyTry           Decimal   @default(500)
-  companyPackageMonthlyTry     Decimal   @default(4500)
-  source                       String
-  sourceDate                   DateTime
-  currency                     String    @default("USD")
-  exchangeRate                 Decimal?
-  effectiveFrom                DateTime
-  effectiveTo                  DateTime?
-  status                       String    @default("EDITABLE_STARTER")
-  notes                        String?
-  createdAt                    DateTime  @default(now())
-  updatedAt                    DateTime  @updatedAt
+  id                              String    @id @default(cuid())
+  name                            String
+  saleValueUsd                    Decimal
+  productCostUsd                  Decimal
+  packagingTry                    Decimal
+  domesticTransferTry             Decimal   @default(0)
+  internationalShippingUsd        Decimal
+  insuranceUsd                    Decimal   @default(0)
+  otherCarrierSurchargeUsd        Decimal   @default(0)
+  customsEstimateUsd              Decimal
+  includeCustomsInSellerProfit    Boolean   @default(false)
+  estimatedEtgbFeeUsd             Decimal?
+  includeEtgbInSellerProfit       Boolean   @default(false)
+  etsyPlusMonthlyTry              Decimal   @default(500)
+  companyPackageMonthlyTry        Decimal   @default(4500)
+  source                          String
+  sourceDate                      DateTime
+  currency                        String    @default("USD")
+  exchangeRate                    Decimal?
+  effectiveFrom                   DateTime
+  effectiveTo                     DateTime?
+  status                          String    @default("EDITABLE_STARTER")
+  notes                           String?
+  globalEconomicHourlyRateTry     Decimal?
+  minimumCashProfitUsd            Decimal   @default(15)
+  minimumEconomicProfitUsd        Decimal   @default(15)
+  minimumCashMarginPercent        Decimal   @default(10)
+  minimumEconomicMarginPercent    Decimal   @default(10)
+  minimumCashProfitPerHourUsd     Decimal   @default(10)
+  minimumEconomicProfitPerHourUsd Decimal   @default(10)
+  gradeAProfitUsd                 Decimal   @default(50)
+  gradeAMarginPercent             Decimal   @default(25)
+  gradeBProfitUsd                 Decimal   @default(30)
+  gradeBMarginPercent             Decimal   @default(15)
+  gradeCProfitUsd                 Decimal   @default(20)
+  gradeCMarginPercent             Decimal   @default(10)
+  criticalMarginPercent           Decimal   @default(5)
+  lowProfitUsd                    Decimal   @default(15)
+  shippingHeavyPercent            Decimal   @default(25)
+  overheadHeavyPercent            Decimal   @default(20)
+  createdAt                       DateTime  @default(now())
+  updatedAt                       DateTime  @updatedAt
 
   @@unique([name, effectiveFrom])
   @@index([effectiveFrom, effectiveTo])
@@ -1552,6 +1589,7 @@ model BusinessPersonRole {
   effectiveFrom                DateTime
   effectiveTo                  DateTime?
   compensationModel            String?
+  economicHourlyRateTry        Decimal?
   sgkStatus                    ConfirmationStatus @default(UNKNOWN)
   taxTreatmentStatus           ConfirmationStatus @default(UNKNOWN)
   accountantConfirmationStatus ConfirmationStatus @default(PENDING_ACCOUNTANT_CONFIRMATION)

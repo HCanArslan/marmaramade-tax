@@ -123,6 +123,12 @@ export default async function ProductsPage() {
             ["materialCostTry", "Materials TRY", "number", "0"],
             ["laborHours", "Labor hours", "number", "0"],
             ["laborHourlyRateTry", "Hourly TRY", "number", "0"],
+            [
+              "economicHourlyRateTry",
+              "Economic hourly TRY (optional)",
+              "number",
+              "",
+            ],
             ["packagingCostTry", "Packaging TRY", "number", "0"],
             ["additionalDirectCostTry", "Other direct TRY", "number", "0"],
             ["wastageRate", "Wastage %", "number", "0"],
@@ -140,7 +146,8 @@ export default async function ProductsPage() {
                 type={type}
                 defaultValue={value}
                 required={
-                  !["templateType", "changeReason", "notes"].includes(name)
+                  !["templateType", "changeReason", "notes"].includes(name) &&
+                  name !== "economicHourlyRateTry"
                 }
                 step={type === "number" ? "0.01" : undefined}
               />
@@ -283,6 +290,15 @@ export default async function ProductsPage() {
                           name="laborHourlyRateTry"
                           value={costVersion.laborHourlyRateTry.toString()}
                           locked={locked}
+                        />
+                        <CostInput
+                          label="Economic hourly TRY"
+                          name="economicHourlyRateTry"
+                          value={
+                            costVersion.economicHourlyRateTry?.toString() || ""
+                          }
+                          locked={locked}
+                          required={false}
                         />
                         <CostInput
                           label="Packaging TRY"

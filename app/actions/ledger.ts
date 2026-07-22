@@ -21,6 +21,7 @@ import { defaultCalculatorInput } from "@/lib/domain/defaults";
 import { calculateProductCost } from "@/lib/domain/product-cost";
 import { optimizeProductMix } from "@/lib/goals/planner";
 import Decimal from "decimal.js";
+import { monthStartUtc } from "@/lib/domain/overhead";
 import type { Prisma } from "@/generated/prisma/client";
 
 const text = z.string().trim().min(1);
@@ -29,6 +30,11 @@ const optionalText = z
   .trim()
   .transform((v) => v || undefined);
 const number = z.coerce.number().finite();
+const nonNegativeNumber = z.coerce.number().finite().min(0);
+const optionalNonNegativeNumber = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  nonNegativeNumber.optional(),
+);
 const date = z.coerce.date();
 const checkbox = z
   .union([z.literal("on"), z.literal("true"), z.literal(true)])
@@ -458,6 +464,23 @@ export async function createCostAssumptionProfileAction(formData: FormData) {
       includeEtgbInSellerProfit: checkbox,
       etsyPlusMonthlyTry: number,
       companyPackageMonthlyTry: number,
+      globalEconomicHourlyRateTry: optionalNonNegativeNumber,
+      minimumCashProfitUsd: nonNegativeNumber,
+      minimumEconomicProfitUsd: nonNegativeNumber,
+      minimumCashMarginPercent: nonNegativeNumber,
+      minimumEconomicMarginPercent: nonNegativeNumber,
+      minimumCashProfitPerHourUsd: nonNegativeNumber,
+      minimumEconomicProfitPerHourUsd: nonNegativeNumber,
+      gradeAProfitUsd: nonNegativeNumber,
+      gradeAMarginPercent: nonNegativeNumber,
+      gradeBProfitUsd: nonNegativeNumber,
+      gradeBMarginPercent: nonNegativeNumber,
+      gradeCProfitUsd: nonNegativeNumber,
+      gradeCMarginPercent: nonNegativeNumber,
+      criticalMarginPercent: nonNegativeNumber,
+      lowProfitUsd: nonNegativeNumber,
+      shippingHeavyPercent: nonNegativeNumber,
+      overheadHeavyPercent: nonNegativeNumber,
       source: text,
       sourceDate: date,
       effectiveFrom: date,
@@ -1437,6 +1460,7 @@ export async function createProductCostAction(formData: FormData) {
       materialCostTry: number,
       laborHours: number,
       laborHourlyRateTry: number,
+      economicHourlyRateTry: optionalNonNegativeNumber,
       packagingCostTry: number,
       additionalDirectCostTry: number,
       wastageRate: number,
@@ -1471,6 +1495,7 @@ export async function updateProductCostAction(formData: FormData) {
       materialCostTry: number,
       laborHours: number,
       laborHourlyRateTry: number,
+      economicHourlyRateTry: optionalNonNegativeNumber,
       packagingCostTry: number,
       additionalDirectCostTry: number,
       wastageRate: number,
@@ -1588,6 +1613,7 @@ export async function duplicateProductCostSetupAction(formData: FormData) {
         materialCostTry: source.materialCostTry,
         laborHours: source.laborHours,
         laborHourlyRateTry: source.laborHourlyRateTry,
+        economicHourlyRateTry: source.economicHourlyRateTry,
         packagingCostTry: source.packagingCostTry,
         additionalDirectCostTry: source.additionalDirectCostTry,
         wastageRate: source.wastageRate,
@@ -2253,13 +2279,13 @@ export async function saveMonthlyOverheadAction(formData: FormData) {
   const v = z
     .object({
       month: date,
-      accountantTry: number,
-      socialSecurityTry: number,
-      softwareTry: number,
-      bankingTry: number,
-      officeTry: number,
-      otherTry: number,
-      etsyPlusTry: number,
+      accountantTry: nonNegativeNumber,
+      socialSecurityTry: nonNegativeNumber,
+      softwareTry: nonNegativeNumber,
+      bankingTry: nonNegativeNumber,
+      officeTry: nonNegativeNumber,
+      otherTry: nonNegativeNumber,
+      etsyPlusTry: nonNegativeNumber,
       allocationMethod: z.enum([
         "EXPECTED_SALES",
         "ACTUAL_SALES",
@@ -2269,7 +2295,7 @@ export async function saveMonthlyOverheadAction(formData: FormData) {
       ]),
       expectedSales: z.coerce.number().int().positive(),
       actualSales: z.coerce.number().int().nonnegative(),
-      manualPerOrderTry: number,
+      manualPerOrderTry: nonNegativeNumber,
       notes: optionalText,
     })
     .parse(Object.fromEntries(formData));
@@ -2297,6 +2323,114 @@ export async function saveMonthlyOverheadAction(formData: FormData) {
   revalidatePath("/business");
   revalidatePath("/calculator");
   revalidatePath("/");
+}
+
+export async function deleteMonthlyOverheadAction(formData: FormData) {
+  const actor = await adminActor("/business");
+  const id = text.parse(formData.get("id"));
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.monthlyOverhead.findUniqueOrThrow({
+      where: { id },
+    });
+    await tx.monthlyOverhead.delete({ where: { id } });
+    await tx.auditLog.create({
+      data: {
+        entityType: "MonthlyOverhead",
+        entityId: id,
+        action: "DELETED",
+        actor,
+        beforeJson: JSON.stringify(before),
+      },
+    });
+  });
+  revalidatePath("/business");
+  revalidatePath("/calculator");
+  revalidatePath("/");
+}
+
+const recurringBusinessCostSchema = z.object({
+  name: text,
+  category: z.enum(["ACCOUNTING", "SOFTWARE", "BANKING", "OFFICE", "OTHER"]),
+  amount: nonNegativeNumber,
+  currency: z.enum(["TRY", "USD"]),
+  billingFrequency: z.enum(["MONTHLY", "ANNUAL"]),
+  vatRate: nonNegativeNumber.refine((value) => value <= 100),
+  includeInSalesPlan: checkbox,
+  effectiveFrom: date,
+  effectiveTo: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.coerce.date().optional(),
+  ),
+  notes: optionalText,
+});
+
+function revalidateRecurringBusinessCosts() {
+  revalidatePath("/business");
+  revalidatePath("/calculator");
+  revalidatePath("/");
+}
+
+export async function createRecurringBusinessCostAction(formData: FormData) {
+  const actor = await adminActor("/business");
+  const value = recurringBusinessCostSchema.parse(Object.fromEntries(formData));
+  const row = await prisma.recurringBusinessCost.create({ data: value });
+  await prisma.auditLog.create({
+    data: {
+      entityType: "RecurringBusinessCost",
+      entityId: row.id,
+      action: "CREATED",
+      actor,
+      afterJson: JSON.stringify(row),
+    },
+  });
+  revalidateRecurringBusinessCosts();
+}
+
+export async function updateRecurringBusinessCostAction(formData: FormData) {
+  const actor = await adminActor("/business");
+  const id = text.parse(formData.get("id"));
+  const value = recurringBusinessCostSchema.parse(Object.fromEntries(formData));
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.recurringBusinessCost.findUniqueOrThrow({
+      where: { id },
+    });
+    const after = await tx.recurringBusinessCost.update({
+      where: { id },
+      data: value,
+    });
+    await tx.auditLog.create({
+      data: {
+        entityType: "RecurringBusinessCost",
+        entityId: id,
+        action: "UPDATED",
+        actor,
+        beforeJson: JSON.stringify(before),
+        afterJson: JSON.stringify(after),
+      },
+    });
+  });
+  revalidateRecurringBusinessCosts();
+}
+
+export async function deleteRecurringBusinessCostAction(formData: FormData) {
+  const actor = await adminActor("/business");
+  const id = text.parse(formData.get("id"));
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.recurringBusinessCost.findUniqueOrThrow({
+      where: { id },
+    });
+    await tx.recurringBusinessCost.delete({ where: { id } });
+    await tx.auditLog.create({
+      data: {
+        entityType: "RecurringBusinessCost",
+        entityId: id,
+        action: "DELETED",
+        actor,
+        beforeJson: JSON.stringify(before),
+      },
+    });
+  });
+  revalidateRecurringBusinessCosts();
 }
 
 export async function runInventoryGoalAction(formData: FormData) {
@@ -2332,7 +2466,10 @@ export async function runInventoryGoalAction(formData: FormData) {
       prisma.legalOperatingProfile.findUnique({
         where: { id: goal.operatingProfileId },
       }),
-      prisma.monthlyOverhead.findFirst({ orderBy: { month: "desc" } }),
+      prisma.monthlyOverhead.findFirst({
+        where: { month: { lte: monthStartUtc(new Date()) } },
+        orderBy: { month: "desc" },
+      }),
       prisma.shippingQuote.findFirst({
         where: { planningDefault: true, shippingCurrency: "USD" },
         orderBy: { quoteDate: "desc" },
