@@ -16,6 +16,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { navigationTr, tr } from "@/lib/i18n/tr";
 
 type NavChild = { href: string; label: string };
 type NavGroup = {
@@ -25,84 +26,22 @@ type NavGroup = {
   children: NavChild[];
 };
 
-const groups: NavGroup[] = [
-  {
-    href: "/inventory",
-    label: "Inventory",
-    icon: Boxes,
-    children: [
-      { href: "/products", label: "Products" },
-      { href: "/materials", label: "Materials" },
-      { href: "/production", label: "Production" },
-    ],
-  },
-  {
-    href: "/orders",
-    label: "Sales & planning",
-    icon: PackageCheck,
-    children: [
-      { href: "/invoices", label: "Invoices" },
-      { href: "/calculator", label: "Calculator" },
-      { href: "/goals", label: "Monthly goals" },
-      { href: "/sales-plan", label: "Sales plan" },
-    ],
-  },
-  {
-    href: "/etsy-import",
-    label: "Etsy",
-    icon: Import,
-    children: [
-      { href: "/fees", label: "Fees" },
-      { href: "/etsy-payouts", label: "Payouts" },
-      { href: "/reconciliation", label: "Reconciliation" },
-    ],
-  },
-  {
-    href: "/shipping",
-    label: "Shipping & export",
-    icon: Ship,
-    children: [
-      { href: "/shipentegra", label: "ShipEntegra" },
-      { href: "/customs", label: "Customs estimates" },
-      { href: "/customs-etgb", label: "Customs & ETGB" },
-      { href: "/documents", label: "Documents" },
-    ],
-  },
-  {
-    href: "/banking",
-    label: "Finance",
-    icon: WalletCards,
-    children: [
-      { href: "/expenses", label: "Expenses" },
-      { href: "/cash-flow", label: "Cash flow" },
-      { href: "/reports", label: "Reports" },
-    ],
-  },
-  {
-    href: "/business",
-    label: "Business",
-    icon: ShieldCheck,
-    children: [
-      { href: "/formation", label: "Formation" },
-      { href: "/tax-exemption", label: "Tax exemption" },
-      { href: "/accountant", label: "Accountant" },
-      { href: "/taxes", label: "Taxes" },
-      { href: "/sgk", label: "SGK" },
-      { href: "/compliance", label: "Compliance" },
-    ],
-  },
-  {
-    href: "/settings",
-    label: "Settings",
-    icon: Settings,
-    children: [
-      { href: "/settings/etsy", label: "Etsy integration" },
-      { href: "/settings/shipentegra", label: "ShipEntegra integration" },
-      { href: "/settings/security", label: "Security" },
-      { href: "/audit-log", label: "Audit log" },
-    ],
-  },
-];
+const groupIcons = [
+  Boxes,
+  PackageCheck,
+  Import,
+  Ship,
+  WalletCards,
+  ShieldCheck,
+  Settings,
+] as const;
+
+const groups: NavGroup[] = navigationTr.map((group, index) => ({
+  href: group.href,
+  label: group.label,
+  icon: groupIcons[index],
+  children: group.children.map(([href, label]) => ({ href, label })),
+}));
 
 function routeIsActive(pathname: string, href: string) {
   return pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
@@ -131,20 +70,20 @@ export function Sidebar() {
               MarmaraMade
             </span>
             <span className="block text-[10px] uppercase tracking-[.21em] text-white/55">
-              Profitability ledger
+              {tr.shell.profitabilityLedger}
             </span>
           </span>
         </Link>
         <span className="pill border-white/15 bg-white/5 text-white/70 lg:mt-4">
-          ● Local database
+          ● {tr.shell.localDatabase}
         </span>
       </div>
 
       <nav
         className="flex gap-1 overflow-x-auto px-3 pb-3 lg:hidden"
-        aria-label="Main navigation"
+        aria-label={tr.shell.mainNavigation}
       >
-        <MobileLink href="/" label="Dashboard" pathname={pathname} />
+        <MobileLink href="/" label={tr.shell.dashboard} pathname={pathname} />
         {groups.map((group) => (
           <MobileLink
             href={group.href}
@@ -157,7 +96,7 @@ export function Sidebar() {
 
       <nav
         className="hidden min-h-0 flex-1 overflow-y-auto px-3 pb-3 lg:block"
-        aria-label="Main navigation"
+        aria-label={tr.shell.mainNavigation}
       >
         <Link
           href="/"
@@ -169,7 +108,7 @@ export function Sidebar() {
           )}
         >
           <Gauge size={17} />
-          <span>Dashboard</span>
+          <span>{tr.shell.dashboard}</span>
         </Link>
         <div className="space-y-1">
           {groups.map((group) => {
@@ -196,7 +135,7 @@ export function Sidebar() {
                   <button
                     type="button"
                     className="mr-1 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white/55 hover:bg-white/10 hover:text-white"
-                    aria-label={`${open ? "Collapse" : "Expand"} ${group.label}`}
+                    aria-label={`${open ? tr.shell.collapse : tr.shell.expand} ${group.label}`}
                     aria-expanded={open}
                     onClick={() =>
                       setExpanded((current) => ({
@@ -248,8 +187,8 @@ export function Sidebar() {
       </nav>
 
       <div className="mx-4 mb-4 hidden shrink-0 rounded-xl border border-white/10 bg-black/10 p-3 text-[11px] leading-4 text-white/45 lg:block">
-        <p className="text-white/70">Hamit Can Arslan · Sole Proprietorship</p>
-        <p>Türkiye → worldwide · USD revenue / TRY costs</p>
+        <p className="text-white/70">Hamit Can Arslan · Şahıs işletmesi</p>
+        <p>Türkiye → dünya · USD gelir / TRY gider</p>
       </div>
     </aside>
   );

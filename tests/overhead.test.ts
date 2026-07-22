@@ -166,8 +166,8 @@ describe("annual business spending", () => {
     expect(calculator).toContain("annualPackagingBudgetIncluded");
     expect(calculator).toContain("Included in annual budget");
     expect(calculator).toContain("Annual recurring-cost breakdown");
-    expect(calculator).toContain("Annual sell-all scenario");
-    expect(calculator).toContain('value="One year"');
+    expect(calculator).toContain("Mevcut planı sat");
+    expect(calculator).toContain("Beklenen yıllık satış");
     expect(calculator).not.toContain("Full plan-period overhead");
     expect(calculator).not.toContain("Planning horizon");
     expect(calculator).not.toContain("Exclude overhead from this plan");

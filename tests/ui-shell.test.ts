@@ -8,17 +8,22 @@ describe("application shell", () => {
       path.join(process.cwd(), "components/sidebar.tsx"),
       "utf8",
     );
+    const messages = await readFile(
+      path.join(process.cwd(), "lib/i18n/tr.ts"),
+      "utf8",
+    );
     for (const section of [
-      "Inventory",
-      "Sales & planning",
+      "Stok",
+      "Satış ve planlama",
       "Etsy",
-      "Shipping & export",
-      "Finance",
-      "Business",
-      "Settings",
+      "Kargo ve ihracat",
+      "Finans",
+      "İşletme",
+      "Ayarlar",
     ]) {
-      expect(sidebar).toContain(`label: "${section}"`);
+      expect(messages).toContain(`label: "${section}"`);
     }
+    expect(sidebar).toContain("navigationTr.map");
     expect(sidebar).toContain("aria-expanded={open}");
     expect(sidebar).toContain("min-h-0 flex-1 overflow-y-auto");
     expect(sidebar).not.toContain("lg:absolute");
