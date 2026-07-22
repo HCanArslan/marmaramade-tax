@@ -232,9 +232,9 @@ describe("planning usability", () => {
       ),
     ]);
 
-    expect(taxes).toContain("Calculator planning reserve");
-    expect(taxes).toContain("blank = saved rate");
-    expect(taxes).toContain("full exemption");
+    expect(taxes).toContain("TaxPlanningReserve");
+    expect(taxes).toContain("Gelişmiş Vergi Kuralları");
+    expect(taxes).toContain("tam istisna");
     expect(actions).toContain('taxType: "PROVISIONAL_INCOME_TAX"');
     expect(actions).toContain("estimatedPayable ??");
     expect(calculatorPage).toContain('purpose: "PLANNING_RESERVE"');

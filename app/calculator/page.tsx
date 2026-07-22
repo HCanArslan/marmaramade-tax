@@ -2,6 +2,7 @@ import Decimal from "decimal.js";
 import { CalculatorWorkspace } from "@/components/calculator-workspace";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { defaultCalculatorInput } from "@/lib/domain/defaults";
+import { microExportBenefitEnabledFromTaxBase } from "@/lib/domain/income-tax-planning";
 import { applyFeeProfile } from "@/lib/domain/fee-profile";
 import { defaultProfitabilityThresholds } from "@/lib/domain/profitability";
 import {
@@ -418,6 +419,9 @@ export default async function CalculatorPage() {
           planningTaxRule?.rate?.toString() ??
           legalProfile?.incomeTaxReserveRate.toString() ??
           "0",
+        useMicroExportIncomeTaxBenefit: microExportBenefitEnabledFromTaxBase(
+          planningTaxRule?.taxBase,
+        ),
         businessStatus:
           legalProfile?.operatingMode === "SOLE_PROPRIETORSHIP"
             ? "SOLE_PROPRIETORSHIP"
