@@ -29,7 +29,7 @@ describe("Turkish UI foundation", () => {
     const workspace = await source("components/calculator-workspace.tsx");
     for (const text of [
       "Satış Adedi Projeksiyonu",
-      "Sabit gider dağıtım yöntemi",
+      "Tam yıllık işletme gideri",
       "Gümrük senaryosu",
       "Mevcut ürün karması",
       "Temsilci ürün",
