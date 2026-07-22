@@ -19,10 +19,8 @@ import {
 } from "@/lib/domain/overhead";
 import type { CalculatorInput } from "@/lib/domain/types";
 import {
-  allocateAnnualOverhead,
   calculateAggregateTaxReserve,
   calculateSalesProjection,
-  type FixedOverheadMode,
 } from "@/lib/domain/sales-plan";
 import { tr } from "@/lib/i18n/tr";
 
@@ -137,9 +135,6 @@ export function CalculatorWorkspace({
   const [tab, setTab] = useState<Tab>("quick");
   const [targetProfit, setTargetProfit] = useState("50");
   const [targetMargin, setTargetMargin] = useState("30");
-  const [fixedOverheadMode, setFixedOverheadMode] = useState<FixedOverheadMode>(
-    "EXPECTED_ANNUAL_SALES",
-  );
   const [projectedSalesQuantity, setProjectedSalesQuantity] = useState("30");
   const [projectionMixMode, setProjectionMixMode] = useState<
     "CURRENT_MIX" | "REPRESENTATIVE_PRODUCT"
@@ -233,21 +228,11 @@ export function CalculatorWorkspace({
     [planQuantities, products],
   );
   const planOverhead = useMemo(() => {
-    const allocated = allocateAnnualOverhead({
-      annualOverhead: annualOverheadEvidence?.annualTotalTry ?? 0,
-      mode: fixedOverheadMode,
-      plannedUnits: plannedUnitCount,
-      expectedAnnualSales: new Decimal(
-        calculationInput.expectedMonthlyOrders || 0,
-      ).mul(12),
-    });
-    return resolveAnnualPlanOverhead(allocated, plannedUnitCount);
-  }, [
-    annualOverheadEvidence?.annualTotalTry,
-    calculationInput.expectedMonthlyOrders,
-    fixedOverheadMode,
-    plannedUnitCount,
-  ]);
+    return resolveAnnualPlanOverhead(
+      annualOverheadEvidence?.annualTotalTry ?? 0,
+      plannedUnitCount,
+    );
+  }, [annualOverheadEvidence?.annualTotalTry, plannedUnitCount]);
   const annualPackagingBudgetIncluded = Boolean(
     annualOverheadEvidence?.items.some(
       (cost) =>
@@ -1042,58 +1027,21 @@ export function CalculatorWorkspace({
                   </option>
                 </select>
               </label>
-              <label className="text-xs text-stone-500">
-                Sabit gider dağıtım yöntemi
-                <select
-                  className="field mt-1"
-                  value={fixedOverheadMode}
-                  onChange={(event) =>
-                    setFixedOverheadMode(
-                      event.target.value as FixedOverheadMode,
-                    )
-                  }
-                >
-                  <option value="EXPECTED_ANNUAL_SALES">
-                    Yıllık beklenen satış adedine göre dağıt
-                  </option>
-                  <option value="FULL_ANNUAL">
-                    Yıllık sabit giderin tamamını bu plana yükle
-                  </option>
-                  <option value="EXCLUDED">Sabit giderleri hariç tut</option>
-                </select>
-              </label>
-              <NumberField
-                label="Beklenen yıllık satış"
-                value={new Decimal(
-                  calculationInput.expectedMonthlyOrders || 0,
-                ).mul(12)}
-                suffix="ADET"
-                onChange={(value) =>
-                  set(
-                    "expectedMonthlyOrders",
-                    new Decimal(value || 0).div(12).toString(),
-                  )
-                }
-              />
-              <div className="rounded-xl bg-stone-50 p-4 text-xs leading-5 text-stone-600">
-                Yıllık toplam:{" "}
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs leading-5 text-emerald-950 md:col-span-2">
+                <strong>Tam yıllık işletme gideri</strong>
+                <br />
+                Bu tutar aya, ürün sayısına veya beklenen satış adedine
+                bölünmez. Plan sonucundan bir kez düşülür.
+              </div>
+              <div className="rounded-xl bg-stone-50 p-4 text-xs leading-5 text-stone-600 md:col-span-2">
+                Bu plana yüklenen yıllık toplam:{" "}
                 {formatMoney(
                   annualOverheadEvidence?.annualTotalTry ?? 0,
                   "TRY",
                 )}
                 <br />
-                Bu plana yüklenen:{" "}
-                {formatMoney(planOverhead.totalPlanOverheadTry, "TRY")}
-                {fixedOverheadMode === "EXPECTED_ANNUAL_SALES" && (
-                  <>
-                    <br />
-                    Beklenen yıllık satış:{" "}
-                    {new Decimal(calculationInput.expectedMonthlyOrders || 0)
-                      .mul(12)
-                      .toString()}{" "}
-                    adet
-                  </>
-                )}
+                Mükellef.co + ChatGPT Plus + paketleme bütçesi + Etsy Business.
+                Ayrıntılar /business sayfasında düzenlenebilir.
               </div>
             </div>
           </section>
