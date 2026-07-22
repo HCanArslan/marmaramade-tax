@@ -6,6 +6,10 @@ import { requireAdmin } from "@/lib/auth/require-admin";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import Decimal from "decimal.js";
+import {
+  FULL_BUSINESS_PROFIT_TAX_BASE,
+  MICRO_EXPORT_BENEFIT_TAX_BASE,
+} from "@/lib/domain/income-tax-planning";
 
 const text = z.string().trim().min(1);
 const optionalText = z
@@ -864,6 +868,40 @@ export async function deleteMicroExportCaseAction(formData: FormData) {
     after: { deleted: true },
   });
   revalidatePath("/customs-etgb");
+}
+
+export async function updateMicroExportBenefitPlanningAction(
+  formData: FormData,
+) {
+  const admin = await actor("/taxes");
+  const enabled = checkbox.parse(
+    formData.get("useMicroExportBenefit") ?? undefined,
+  );
+  const current = await prisma.taxRuleVersion.findFirst({
+    where: { purpose: "PLANNING_RESERVE", isPlanningDefault: true },
+    orderBy: { effectiveFrom: "desc" },
+  });
+  if (!current) {
+    throw new Error(
+      "Önce gelişmiş vergi kurallarında bir planlama rezervi varsayılanı kaydedin.",
+    );
+  }
+  const taxBase = enabled
+    ? MICRO_EXPORT_BENEFIT_TAX_BASE
+    : FULL_BUSINESS_PROFIT_TAX_BASE;
+  await prisma.taxRuleVersion.update({
+    where: { id: current.id },
+    data: { name: "Income-tax Planning Reserve", taxBase },
+  });
+  await audit({
+    entityType: "TaxRuleVersion",
+    entityId: current.id,
+    action: "MICRO_EXPORT_PLANNING_ASSUMPTION_UPDATED",
+    actor: admin,
+    after: { enabled, taxBase },
+  });
+  revalidatePath("/taxes");
+  revalidatePath("/calculator");
 }
 
 export async function createTaxRuleAction(formData: FormData) {

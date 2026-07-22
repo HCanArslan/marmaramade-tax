@@ -1,8 +1,10 @@
 import Decimal from "decimal.js";
 import type { DecimalInput } from "./money";
+import { calculateIncomeTaxPlanningReserve } from "./income-tax-planning";
 
 export interface AggregateTaxReserveResult {
   aggregatePreTaxProfit: Decimal;
+  taxablePlanningProfit: Decimal;
   taxReserve: Decimal;
   finalProfit: Decimal;
 }
@@ -32,6 +34,7 @@ export interface SalesProjectionInput {
   averageVariableCost: DecimalInput;
   annualFixedBusinessCosts: DecimalInput;
   taxReserveRate: DecimalInput;
+  useMicroExportIncomeTaxBenefit?: boolean;
   averageProductionHours?: DecimalInput | null;
   averageEconomicLabourCost?: DecimalInput | null;
 }
@@ -49,6 +52,7 @@ export function calculateSalesProjection(input: SalesProjectionInput) {
   const aggregateTax = calculateAggregateTaxReserve(
     aggregatePreTaxProfit,
     input.taxReserveRate,
+    input.useMicroExportIncomeTaxBenefit,
   );
   const economicLabourCost =
     input.averageEconomicLabourCost === null ||
@@ -77,6 +81,7 @@ export function calculateSalesProjection(input: SalesProjectionInput) {
     projectedContribution,
     fixedBusinessCosts,
     aggregatePreTaxProfit,
+    taxablePlanningProfit: aggregateTax.taxablePlanningProfit,
     taxReserve: aggregateTax.taxReserve,
     finalCashProfit: aggregateTax.finalProfit,
     economicProfit,
@@ -93,13 +98,17 @@ export function calculateSalesProjection(input: SalesProjectionInput) {
 export function calculateAggregateTaxReserve(
   aggregatePreTaxProfit: DecimalInput,
   taxReserveRate: DecimalInput,
+  useMicroExportIncomeTaxBenefit = false,
 ): AggregateTaxReserveResult {
-  const preTax = new Decimal(aggregatePreTaxProfit);
-  const rate = Decimal.max(0, taxReserveRate).div(100);
-  const taxReserve = preTax.gt(0) ? preTax.mul(rate) : new Decimal(0);
+  const result = calculateIncomeTaxPlanningReserve({
+    businessProfit: aggregatePreTaxProfit,
+    reserveRate: taxReserveRate,
+    useMicroExportBenefit: useMicroExportIncomeTaxBenefit,
+  });
   return {
-    aggregatePreTaxProfit: preTax,
-    taxReserve,
-    finalProfit: preTax.minus(taxReserve),
+    aggregatePreTaxProfit: result.businessProfit,
+    taxablePlanningProfit: result.taxablePlanningBase,
+    taxReserve: result.reserve,
+    finalProfit: result.finalProfitAfterReserve,
   };
 }

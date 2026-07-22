@@ -64,6 +64,7 @@ export const defaultCalculatorInput: CalculatorInput = {
   damageReserveRate: "0",
   exchangeLossReserveRate: "0",
   taxReserveRate: "0",
+  useMicroExportIncomeTaxBenefit: true,
   otherOperatingExpensesUsd: "0",
   usdTryRate: "47.03",
   businessStatus: "INDIVIDUAL_UNREGISTERED",

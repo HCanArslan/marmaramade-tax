@@ -522,21 +522,29 @@ export function CalculatorWorkspace({
       calculateAggregateTaxReserve(
         planTotalsBeforeTax.preTaxProfit,
         calculationInput.taxReserveRate,
+        calculationInput.useMicroExportIncomeTaxBenefit,
       ),
-    [calculationInput.taxReserveRate, planTotalsBeforeTax.preTaxProfit],
+    [
+      calculationInput.taxReserveRate,
+      calculationInput.useMicroExportIncomeTaxBenefit,
+      planTotalsBeforeTax.preTaxProfit,
+    ],
   );
   const planTotals = useMemo(() => {
     const scenarioA = calculateAggregateTaxReserve(
       planTotalsBeforeTax.scenarioACash,
       calculationInput.taxReserveRate,
+      calculationInput.useMicroExportIncomeTaxBenefit,
     );
     const scenarioB = calculateAggregateTaxReserve(
       planTotalsBeforeTax.scenarioBCash,
       calculationInput.taxReserveRate,
+      calculationInput.useMicroExportIncomeTaxBenefit,
     );
     return {
       ...planTotalsBeforeTax,
       tax: aggregateTax.taxReserve,
+      taxablePlanningProfit: aggregateTax.taxablePlanningProfit,
       profit: aggregateTax.finalProfit,
       totalCosts: planTotalsBeforeTax.totalCosts.plus(aggregateTax.taxReserve),
       economicProfit: planTotalsBeforeTax.economicProfit.minus(
@@ -551,7 +559,12 @@ export function CalculatorWorkspace({
         scenarioB.taxReserve,
       ),
     };
-  }, [aggregateTax, calculationInput.taxReserveRate, planTotalsBeforeTax]);
+  }, [
+    aggregateTax,
+    calculationInput.taxReserveRate,
+    calculationInput.useMicroExportIncomeTaxBenefit,
+    planTotalsBeforeTax,
+  ]);
   const selectedPlanRows = planRows.filter((row) => row.quantity > 0);
   const selectedRepresentativeRow =
     selectedPlanRows.find(
@@ -635,6 +648,8 @@ export function CalculatorWorkspace({
       averageVariableCost: variableCost,
       annualFixedBusinessCosts: projectionFixedCosts,
       taxReserveRate: calculationInput.taxReserveRate,
+      useMicroExportIncomeTaxBenefit:
+        calculationInput.useMicroExportIncomeTaxBenefit,
       averageProductionHours: projectionEconomics.averageProductionHours,
       averageEconomicLabourCost: projectionEconomics.averageEconomicLabourCost,
     });
@@ -1622,7 +1637,9 @@ export function CalculatorWorkspace({
                   missingOverride={false}
                   description={
                     planTotals.preTaxProfit.gt(0)
-                      ? `${new Decimal(calculationInput.taxReserveRate).toString()}% reserve on positive aggregate pre-tax planning profit.`
+                      ? calculationInput.useMicroExportIncomeTaxBenefit
+                        ? `${new Decimal(calculationInput.taxReserveRate).toString()}% reserve on 50% of positive aggregate pre-tax planning profit (micro-export planning assumption).`
+                        : `${new Decimal(calculationInput.taxReserveRate).toString()}% reserve on positive aggregate pre-tax planning profit.`
                       : "The aggregate result after every non-tax deduction is zero or negative."
                   }
                   source={planningSources.tax}
@@ -1638,6 +1655,16 @@ export function CalculatorWorkspace({
                 <Deduction
                   label="Toplam vergi öncesi sonuç"
                   value={planTotals.preTaxProfit}
+                />
+                <Deduction
+                  label="Tahmini vergi planlama matrahı"
+                  value={planTotals.taxablePlanningProfit}
+                  missingOverride={false}
+                  description={
+                    calculationInput.useMicroExportIncomeTaxBenefit
+                      ? "Mikro ihracat planlama varsayımı açık: pozitif ticari kârın %50'si."
+                      : "Mikro ihracat planlama varsayımı kapalı: pozitif ticari kârın %100'ü."
+                  }
                 />
                 <Deduction label="Tüm giderler" value={planTotals.totalCosts} />
                 <Deduction
@@ -2203,6 +2230,14 @@ function ResultPanel({
           <Layer
             label="7. After tax and risk reserves"
             value={t.estimatedAfterReserveProfit}
+          />
+          <Layer
+            label="Vergi öncesi ticari kâr"
+            value={t.estimatedPreTaxProfit}
+          />
+          <Layer
+            label="Tahmini vergi planlama matrahı"
+            value={t.taxablePlanningProfit}
           />
           <div className="mt-2 rounded-lg bg-stone-50 p-3 text-xs text-stone-500">
             8. Actual reconciled cash profit: not available until actual

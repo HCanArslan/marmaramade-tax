@@ -64,6 +64,7 @@ export interface CalculatorInput {
   damageReserveRate: DecimalInput;
   exchangeLossReserveRate: DecimalInput;
   taxReserveRate: DecimalInput;
+  useMicroExportIncomeTaxBenefit: boolean;
   otherOperatingExpensesUsd: DecimalInput;
   usdTryRate: DecimalInput;
   businessStatus: BusinessStatus;
