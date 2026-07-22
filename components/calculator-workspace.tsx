@@ -13,6 +13,10 @@ import {
 import { ProfitabilitySimulator } from "@/components/profitability-simulator";
 import { defaultCalculatorInput } from "@/lib/domain/defaults";
 import { formatMoney } from "@/lib/domain/money";
+import {
+  resolvePlanOverhead,
+  type PlanOverheadTreatment,
+} from "@/lib/domain/overhead";
 import type { CalculatorInput } from "@/lib/domain/types";
 
 type Tab = "quick" | "reverse" | "plan";
@@ -126,6 +130,9 @@ export function CalculatorWorkspace({
   const [tab, setTab] = useState<Tab>("quick");
   const [targetProfit, setTargetProfit] = useState("50");
   const [targetMargin, setTargetMargin] = useState("30");
+  const [planHorizonMonths, setPlanHorizonMonths] = useState("3");
+  const [planOverheadTreatment, setPlanOverheadTreatment] =
+    useState<PlanOverheadTreatment>("FULL_PERIOD");
   const [profitSort, setProfitSort] = useState<
     | "cashProfit"
     | "economicProfit"
@@ -195,6 +202,47 @@ export function CalculatorWorkspace({
     });
     setSelectedProductId("");
   };
+  const plannedUnitCount = useMemo(
+    () =>
+      products.reduce(
+        (total, product) =>
+          total +
+          Math.max(0, Math.floor(Number(planQuantities[product.id] || 0))),
+        0,
+      ),
+    [planQuantities, products],
+  );
+  const planOverhead = useMemo(
+    () =>
+      resolvePlanOverhead({
+        treatment: planOverheadTreatment,
+        monthlyOverheadTry: calculationInput.monthlyOverheadTry,
+        horizonMonths: planHorizonMonths || 0,
+        plannedUnits: plannedUnitCount,
+        configuredMethod: calculationInput.overheadAllocationMethod,
+        expectedMonthlyOrders: calculationInput.expectedMonthlyOrders,
+        actualMonthlyOrders: calculationInput.actualMonthlyOrders,
+        manualOverheadPerOrderTry: calculationInput.manualOverheadPerOrderTry,
+      }),
+    [
+      calculationInput.actualMonthlyOrders,
+      calculationInput.expectedMonthlyOrders,
+      calculationInput.manualOverheadPerOrderTry,
+      calculationInput.monthlyOverheadTry,
+      calculationInput.overheadAllocationMethod,
+      planHorizonMonths,
+      plannedUnitCount,
+      planOverheadTreatment,
+    ],
+  );
+  const planCalculationInput: CalculatorInput = useMemo(
+    () => ({
+      ...calculationInput,
+      overheadAllocationMethod: planOverhead.allocationMethod,
+      manualOverheadPerOrderTry: planOverhead.manualOverheadPerOrderTry,
+    }),
+    [calculationInput, planOverhead],
+  );
   const planRows = useMemo(
     () =>
       products.map((product) => {
@@ -205,7 +253,7 @@ export function CalculatorWorkspace({
         const productInput: CalculatorInput | null =
           product.currency === "USD"
             ? {
-                ...calculationInput,
+                ...planCalculationInput,
                 itemSubtotalUsd: product.originalPrice,
                 sellerFundedDiscountUsd: product.discountAmount,
                 materialCostTry: product.materialCostTry,
@@ -286,9 +334,12 @@ export function CalculatorWorkspace({
             .eq(0)
         )
           missing.push("customs / destination charges");
-        if (new Decimal(calculationInput.monthlyOverheadTry).eq(0))
+        if (
+          planOverheadTreatment !== "EXCLUDED" &&
+          new Decimal(planCalculationInput.monthlyOverheadTry).eq(0)
+        )
           missing.push("monthly business overhead");
-        if (new Decimal(calculationInput.taxReserveRate).eq(0))
+        if (new Decimal(planCalculationInput.taxReserveRate).eq(0))
           missing.push("tax reserve");
         if (!analysis?.productionHoursPerUnit) missing.push("production time");
         if (analysis?.economicLabourCostUsd === null)
@@ -303,7 +354,13 @@ export function CalculatorWorkspace({
           missing,
         };
       }),
-    [calculationInput, planQuantities, products, profitabilityThresholds],
+    [
+      planCalculationInput,
+      planOverheadTreatment,
+      planQuantities,
+      products,
+      profitabilityThresholds,
+    ],
   );
   const planTotals = useMemo(
     () =>
@@ -849,7 +906,7 @@ export function CalculatorWorkspace({
           <section className="card p-5 sm:p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="eyebrow">Monthly scenario</p>
+                <p className="eyebrow">Planning-period scenario</p>
                 <h2 className="mt-1 text-xl font-semibold">
                   Plan selected products or sell all available listings
                 </h2>
@@ -874,6 +931,63 @@ export function CalculatorWorkspace({
                 </button>
               </div>
             </div>
+            <div className="mt-5 grid gap-3 border-t pt-5 md:grid-cols-3">
+              <NumberField
+                label="Planning horizon"
+                value={planHorizonMonths}
+                suffix="MONTHS"
+                onChange={setPlanHorizonMonths}
+              />
+              <label className="text-xs text-stone-500 md:col-span-2">
+                Business-overhead treatment
+                <select
+                  className="field mt-1"
+                  value={planOverheadTreatment}
+                  onChange={(event) =>
+                    setPlanOverheadTreatment(
+                      event.target.value as PlanOverheadTreatment,
+                    )
+                  }
+                >
+                  <option value="FULL_PERIOD">
+                    Full plan-period overhead (recommended)
+                  </option>
+                  <option value="PER_ORDER">Allocate overhead per order</option>
+                  <option value="EXCLUDED">
+                    Exclude overhead from this plan
+                  </option>
+                </select>
+              </label>
+            </div>
+            <div className="mt-3 rounded-xl bg-stone-50 p-4 text-xs leading-5 text-stone-600">
+              {planOverheadTreatment === "FULL_PERIOD" ? (
+                <>
+                  Full-period net profit deducts{" "}
+                  {formatMoney(calculationInput.monthlyOverheadTry, "TRY")} per
+                  month × {new Decimal(planHorizonMonths || 0).toString()}{" "}
+                  month(s) ={" "}
+                  <strong>
+                    {formatMoney(planOverhead.totalPlanOverheadTry, "TRY")}
+                  </strong>{" "}
+                  exactly once across the {plannedUnitCount} planned unit(s).
+                </>
+              ) : planOverheadTreatment === "PER_ORDER" ? (
+                <>
+                  Unit-profit allocation uses the configured{" "}
+                  {calculationInput.overheadAllocationMethod.replaceAll(
+                    "_",
+                    " ",
+                  )}{" "}
+                  method. The horizon is informational in this mode.
+                </>
+              ) : (
+                <>
+                  Business overhead is intentionally excluded. Results are
+                  contribution profit after the other configured costs, not
+                  full-period net profit.
+                </>
+              )}
+            </div>
           </section>
           {selectedPlanRows.length > 0 && missingPlanInputs.length > 0 && (
             <section className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-950">
@@ -897,6 +1011,20 @@ export function CalculatorWorkspace({
             <PlanMetric
               label="Planned units"
               value={String(planTotals.units)}
+            />
+            <PlanMetric
+              label="Planning horizon"
+              value={`${new Decimal(planHorizonMonths || 0).toString()} months`}
+            />
+            <PlanMetric
+              label="Overhead treatment"
+              value={
+                planOverheadTreatment === "FULL_PERIOD"
+                  ? "Full plan period"
+                  : planOverheadTreatment === "PER_ORDER"
+                    ? "Per order"
+                    : "Excluded"
+              }
             />
             <PlanMetric
               label="Seller revenue"
@@ -1114,8 +1242,28 @@ export function CalculatorWorkspace({
                 <Deduction
                   label="Business overhead"
                   value={planTotals.overhead}
-                  description="Monthly accountant, SGK, software, banking, office and other costs divided by expected orders."
-                  source={planningSources.overhead}
+                  displayValue={
+                    planOverheadTreatment === "EXCLUDED"
+                      ? "$0.00 · Excluded from this plan"
+                      : undefined
+                  }
+                  missingOverride={
+                    planOverheadTreatment === "EXCLUDED"
+                      ? false
+                      : new Decimal(calculationInput.monthlyOverheadTry).eq(0)
+                  }
+                  description={
+                    planOverheadTreatment === "FULL_PERIOD"
+                      ? "The complete saved monthly overhead multiplied by the selected planning horizon and deducted once across the plan."
+                      : planOverheadTreatment === "PER_ORDER"
+                        ? "Monthly overhead allocated to each unit using the configured order-volume method."
+                        : "Excluded by the selected plan treatment; this result is not full-period net profit."
+                  }
+                  source={
+                    planOverheadTreatment === "EXCLUDED"
+                      ? "User-selected plan treatment"
+                      : planningSources.overhead
+                  }
                   href="/business"
                   details={
                     overheadEvidence ? (
@@ -1149,16 +1297,22 @@ export function CalculatorWorkspace({
                             )}
                           </span>
                         </p>
-                        <p className="mt-2">
-                          Allocation: {overheadEvidence.allocationMethod}
-                          {overheadEvidence.allocationMethod === "ACTUAL_SALES"
-                            ? ` · ${overheadEvidence.actualSales ?? 0} actual orders`
-                            : overheadEvidence.allocationMethod ===
-                                  "EXPECTED_SALES" ||
-                                overheadEvidence.allocationMethod ===
-                                  "REVENUE_WEIGHTED"
-                              ? ` · ${overheadEvidence.expectedSales} expected orders`
-                              : ""}
+                        <p className="mt-2 font-medium text-stone-800">
+                          Plan treatment:{" "}
+                          {planOverheadTreatment === "FULL_PERIOD"
+                            ? `Full ${new Decimal(planHorizonMonths || 0).toString()}-month overhead`
+                            : planOverheadTreatment === "PER_ORDER"
+                              ? `Per order · ${overheadEvidence.allocationMethod.replaceAll("_", " ")}`
+                              : "Excluded"}
+                        </p>
+                        <p>
+                          Total overhead assigned to plan:{" "}
+                          {formatMoney(
+                            planTotals.overhead.mul(
+                              calculationInput.usdTryRate,
+                            ),
+                            "TRY",
+                          )}
                         </p>
                         <p>
                           Per planned order:{" "}
@@ -1188,6 +1342,22 @@ export function CalculatorWorkspace({
                           </p>
                         )}
                       </div>
+                    ) : planOverheadTreatment === "EXCLUDED" ? (
+                      <p className="mt-3 text-[11px] text-stone-500">
+                        No overhead was requested for this plan.
+                      </p>
+                    ) : new Decimal(calculationInput.monthlyOverheadTry).gt(
+                        0,
+                      ) ? (
+                      <p className="mt-3 text-[11px] text-stone-600">
+                        Using the manual Quick calculator monthly-overhead input
+                        of{" "}
+                        {formatMoney(
+                          calculationInput.monthlyOverheadTry,
+                          "TRY",
+                        )}
+                        . No saved category breakdown is attached.
+                      </p>
                     ) : (
                       <p className="mt-3 text-[11px] text-red-600">
                         No current or historical overhead record was selected.
@@ -1437,17 +1607,26 @@ export function CalculatorWorkspace({
           </section>
           <ProfitabilitySimulator
             products={products.filter((product) => product.currency === "USD")}
-            baseInput={calculationInput}
+            baseInput={planCalculationInput}
             thresholds={profitabilityThresholds}
             targetsSource={profitabilityTargetsSource}
+            overheadContextLabel={
+              planOverheadTreatment === "FULL_PERIOD"
+                ? `${new Decimal(planHorizonMonths || 0).toString()} full month(s) allocated across ${plannedUnitCount} planned unit(s)`
+                : planOverheadTreatment === "PER_ORDER"
+                  ? `Configured ${calculationInput.overheadAllocationMethod.replaceAll("_", " ")} allocation`
+                  : "Excluded from this plan"
+            }
+            showOverheadSensitivity={planOverheadTreatment === "PER_ORDER"}
           />
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
             <AlertTriangle className="mr-1.5 inline" size={14} />
             This is a planning scenario, not a filed tax calculation. Each row
-            uses its own saved product cost. Business overhead, tax reserve,
-            shipping, and customs use the current Quick calculator values. ETGB
-            is an export process, not automatically a separate fee; any carrier
-            or declaration charge must be included in the saved shipping quote.
+            uses its own saved product cost. Business overhead follows the
+            selected plan-period treatment; tax reserve, shipping, and customs
+            use the current Quick calculator values. ETGB is an export process,
+            not automatically a separate fee; any carrier or declaration charge
+            must be included in the saved shipping quote.
           </div>
         </div>
       )}

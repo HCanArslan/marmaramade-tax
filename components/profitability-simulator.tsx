@@ -68,11 +68,15 @@ export function ProfitabilitySimulator({
   baseInput,
   thresholds,
   targetsSource,
+  overheadContextLabel,
+  showOverheadSensitivity = true,
 }: {
   products: CalculatorProductPreset[];
   baseInput: CalculatorInput;
   thresholds: ProfitabilityThresholds;
   targetsSource: string;
+  overheadContextLabel?: string;
+  showOverheadSensitivity?: boolean;
 }) {
   const [productId, setProductId] = useState(products[0]?.id ?? "");
   const product = products.find((item) => item.id === productId) ?? products[0];
@@ -257,6 +261,11 @@ export function ProfitabilitySimulator({
           Every scenario runs through the canonical Etsy fee, VAT, reserve,
           logistics, overhead, and product-cost engine.
         </p>
+        {overheadContextLabel && (
+          <p className="mt-2 rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-600">
+            Overhead context: {overheadContextLabel}
+          </p>
+        )}
         <div className="mt-5 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           <label className="text-xs text-stone-500 xl:col-span-2">
             Product
@@ -348,51 +357,55 @@ export function ProfitabilitySimulator({
         />
       </div>
 
-      <div className="card overflow-hidden">
-        <div className="border-b p-5">
-          <h3 className="font-semibold">Quick price comparison</h3>
-          <p className="mt-1 text-xs text-stone-500">
-            Percentage-based fees are recalculated at every price.
-          </p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="bg-stone-50 text-xs text-stone-500">
-              <tr>
-                <th className="p-4">Scenario</th>
-                <th>Buyer price</th>
-                <th>Cash profit</th>
-                <th>Economic profit</th>
-                <th>Cash margin</th>
-                <th>Economic margin</th>
-                <th>Change vs current</th>
-              </tr>
-            </thead>
-            <tbody>
-              {quickScenarios.map((scenario) => (
-                <tr className="border-t" key={scenario.key}>
-                  <td className="p-4 font-medium">{scenario.label}</td>
-                  <td>{formatMoney(scenario.price, "USD")}</td>
-                  <td>{formatMoney(scenario.result.cashProfit, "USD")}</td>
-                  <td>{optionalMoney(scenario.result.economicProfit)}</td>
-                  <td>{optionalPercent(scenario.result.cashMarginPercent)}</td>
-                  <td>
-                    {optionalPercent(scenario.result.economicMarginPercent)}
-                  </td>
-                  <td>
-                    {formatMoney(
-                      scenario.result.cashProfit.minus(
-                        quickScenarios[0]?.result.cashProfit ?? 0,
-                      ),
-                      "USD",
-                    )}
-                  </td>
+      {showOverheadSensitivity && (
+        <div className="card overflow-hidden">
+          <div className="border-b p-5">
+            <h3 className="font-semibold">Quick price comparison</h3>
+            <p className="mt-1 text-xs text-stone-500">
+              Percentage-based fees are recalculated at every price.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="bg-stone-50 text-xs text-stone-500">
+                <tr>
+                  <th className="p-4">Scenario</th>
+                  <th>Buyer price</th>
+                  <th>Cash profit</th>
+                  <th>Economic profit</th>
+                  <th>Cash margin</th>
+                  <th>Economic margin</th>
+                  <th>Change vs current</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {quickScenarios.map((scenario) => (
+                  <tr className="border-t" key={scenario.key}>
+                    <td className="p-4 font-medium">{scenario.label}</td>
+                    <td>{formatMoney(scenario.price, "USD")}</td>
+                    <td>{formatMoney(scenario.result.cashProfit, "USD")}</td>
+                    <td>{optionalMoney(scenario.result.economicProfit)}</td>
+                    <td>
+                      {optionalPercent(scenario.result.cashMarginPercent)}
+                    </td>
+                    <td>
+                      {optionalPercent(scenario.result.economicMarginPercent)}
+                    </td>
+                    <td>
+                      {formatMoney(
+                        scenario.result.cashProfit.minus(
+                          quickScenarios[0]?.result.cashProfit ?? 0,
+                        ),
+                        "USD",
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="card p-5">
