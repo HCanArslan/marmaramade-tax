@@ -413,7 +413,7 @@ export default async function CalculatorPage() {
       planningDefaults={{
         ...feeDefaults,
         monthlyOverheadTry: "0",
-        expectedMonthlyOrders: "1",
+        expectedMonthlyOrders: String(legalProfile?.expectedMonthlyOrders ?? 1),
         taxReserveRate:
           planningTaxRule?.rate?.toString() ??
           legalProfile?.incomeTaxReserveRate.toString() ??

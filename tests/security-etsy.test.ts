@@ -315,13 +315,13 @@ describe("OAuth, tokens and synchronization", () => {
       "etsyListingLinks",
     );
     expect(await source("components/calculator-workspace.tsx")).toContain(
-      "Choose an Etsy product",
+      "Bir Etsy ürünü seçin",
     );
   });
   it("offers listing sales planning without product-cost or reserve inputs", async () => {
     const workspace = await source("components/calculator-workspace.tsx");
-    expect(workspace).toContain("Sales plan");
-    expect(workspace).toContain("Use all available");
+    expect(workspace).toContain("Satış planı");
+    expect(workspace).toContain("Tüm mevcut adetleri kullan");
     expect(workspace).not.toContain('title="Product cost"');
     expect(workspace).not.toContain("Reserves & overhead");
   });

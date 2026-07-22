@@ -100,13 +100,13 @@ describe("planning usability", () => {
       source("app/actions/ledger.ts"),
     ]);
     expect(calculator).toContain(
-      "Profit is preliminary because required costs are zero",
+      "Zorunlu maliyetler eksik olduğu için sonuç geçicidir",
     );
-    expect(calculator).toContain("Scenario deduction audit");
-    expect(calculator).toContain("International shipping");
+    expect(calculator).toContain("Gider dökümü ve veri kaynakları");
+    expect(calculator).toContain("Uluslararası kargo");
     expect(calculator).toContain("customs / destination charges");
     expect(calculator).toContain("tax reserve");
-    expect(calculator).toContain("Open source page");
+    expect(calculator).toContain("Kaynak:");
     expect(calculatorPage).toContain("Latest saved fallback");
     expect(calculatorPage).toContain("annualBusinessBudgetIds");
     expect(calculatorPage).toContain('contains: "example"');
@@ -132,9 +132,9 @@ describe("planning usability", () => {
     expect(actions).toContain('action: "FULL_SETUP_DUPLICATED"');
     expect(actions).toContain('action: "COPIED_TO_PRODUCT"');
     expect(actions).toContain('action: "DELETED"');
-    expect(calculator).toContain('label="Materials"');
-    expect(calculator).toContain('label="Labour"');
-    expect(calculator).toContain('label="Packaging"');
+    expect(calculator).toContain('label="Malzemeler"');
+    expect(calculator).toContain('label="Emek"');
+    expect(calculator).toContain('label="Paketleme"');
     expect(calculatorPage).toContain("materialWithWastage");
     expect(calculatorPage).toContain("additionalMakerPaymentTry");
   });

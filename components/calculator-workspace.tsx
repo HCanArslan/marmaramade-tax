@@ -18,6 +18,13 @@ import {
   resolveAnnualPlanOverhead,
 } from "@/lib/domain/overhead";
 import type { CalculatorInput } from "@/lib/domain/types";
+import {
+  allocateAnnualOverhead,
+  calculateAggregateTaxReserve,
+  calculateSalesProjection,
+  type FixedOverheadMode,
+} from "@/lib/domain/sales-plan";
+import { tr } from "@/lib/i18n/tr";
 
 type Tab = "quick" | "reverse" | "plan";
 
@@ -130,6 +137,22 @@ export function CalculatorWorkspace({
   const [tab, setTab] = useState<Tab>("quick");
   const [targetProfit, setTargetProfit] = useState("50");
   const [targetMargin, setTargetMargin] = useState("30");
+  const [fixedOverheadMode, setFixedOverheadMode] = useState<FixedOverheadMode>(
+    "EXPECTED_ANNUAL_SALES",
+  );
+  const [projectedSalesQuantity, setProjectedSalesQuantity] = useState("30");
+  const [projectionMixMode, setProjectionMixMode] = useState<
+    "CURRENT_MIX" | "REPRESENTATIVE_PRODUCT"
+  >("CURRENT_MIX");
+  const [representativeProductId, setRepresentativeProductId] = useState("");
+  const [projectionPeriod, setProjectionPeriod] = useState<
+    "MONTHLY" | "ANNUAL"
+  >("ANNUAL");
+  const [projectionPriceOverride, setProjectionPriceOverride] = useState("");
+  const [projectionShippingOverride, setProjectionShippingOverride] =
+    useState("");
+  const [projectionContributionOverride, setProjectionContributionOverride] =
+    useState("");
   const [profitSort, setProfitSort] = useState<
     | "cashProfit"
     | "economicProfit"
@@ -209,14 +232,22 @@ export function CalculatorWorkspace({
       ),
     [planQuantities, products],
   );
-  const planOverhead = useMemo(
-    () =>
-      resolveAnnualPlanOverhead(
-        annualOverheadEvidence?.annualTotalTry ?? 0,
-        plannedUnitCount,
-      ),
-    [annualOverheadEvidence?.annualTotalTry, plannedUnitCount],
-  );
+  const planOverhead = useMemo(() => {
+    const allocated = allocateAnnualOverhead({
+      annualOverhead: annualOverheadEvidence?.annualTotalTry ?? 0,
+      mode: fixedOverheadMode,
+      plannedUnits: plannedUnitCount,
+      expectedAnnualSales: new Decimal(
+        calculationInput.expectedMonthlyOrders || 0,
+      ).mul(12),
+    });
+    return resolveAnnualPlanOverhead(allocated, plannedUnitCount);
+  }, [
+    annualOverheadEvidence?.annualTotalTry,
+    calculationInput.expectedMonthlyOrders,
+    fixedOverheadMode,
+    plannedUnitCount,
+  ]);
   const annualPackagingBudgetIncluded = Boolean(
     annualOverheadEvidence?.items.some(
       (cost) =>
@@ -229,6 +260,7 @@ export function CalculatorWorkspace({
       ...calculationInput,
       overheadAllocationMethod: planOverhead.allocationMethod,
       manualOverheadPerOrderTry: planOverhead.manualOverheadPerOrderTry,
+      taxReserveRate: "0",
     }),
     [calculationInput, planOverhead],
   );
@@ -261,7 +293,7 @@ export function CalculatorWorkspace({
                 customsClearanceFeeUsd: product.customsClearanceFeeUsd,
                 destinationFeesUsd: product.destinationFeesUsd,
                 includeCustomsInSellerProfit:
-                  product.includeCustomsInSellerProfit,
+                  calculationInput.includeCustomsInSellerProfit,
                 etgbCostUsd: product.etgbCostUsd,
                 includeEtgbInSellerProfit: product.includeEtgbInSellerProfit,
               }
@@ -326,7 +358,9 @@ export function CalculatorWorkspace({
         )
           missing.push("customs / destination charges");
         if (!annualOverheadEvidence) missing.push("annual business costs");
-        if (new Decimal(planCalculationInput.taxReserveRate).eq(0))
+        if (product.etgbStatus === "UNKNOWN_PENDING_CONFIRMATION")
+          missing.push("ETGB cost status");
+        if (new Decimal(calculationInput.taxReserveRate).eq(0))
           missing.push("tax reserve");
         if (!analysis?.productionHoursPerUnit) missing.push("production time");
         if (analysis?.economicLabourCostUsd === null)
@@ -342,6 +376,8 @@ export function CalculatorWorkspace({
         };
       }),
     [
+      calculationInput.taxReserveRate,
+      calculationInput.includeCustomsInSellerProfit,
       planCalculationInput,
       annualOverheadEvidence,
       annualPackagingBudgetIncluded,
@@ -350,7 +386,7 @@ export function CalculatorWorkspace({
       profitabilityThresholds,
     ],
   );
-  const planTotals = useMemo(
+  const planTotalsBeforeTax = useMemo(
     () =>
       planRows.reduce(
         (totals, row) => {
@@ -400,14 +436,13 @@ export function CalculatorWorkspace({
             overhead: totals.overhead.plus(
               row.calculation.totals.allocatedBusinessOverheadUsd.mul(quantity),
             ),
-            tax: totals.tax.plus(
-              row.calculation.totals.taxReserve.mul(quantity),
-            ),
             totalCosts: totals.totalCosts.plus(
-              row.calculation.totals.totalCostUsd.mul(quantity),
+              row.calculation.totals.grossRevenue
+                .minus(row.calculation.totals.estimatedPreTaxProfit)
+                .mul(quantity),
             ),
-            profit: totals.profit.plus(
-              row.calculation.totals.estimatedAfterReserveProfit.mul(quantity),
+            preTaxProfit: totals.preTaxProfit.plus(
+              row.calculation.totals.estimatedPreTaxProfit.mul(quantity),
             ),
             economicProfit: row.analysis.economicProfit
               ? totals.economicProfit.plus(
@@ -475,9 +510,8 @@ export function CalculatorWorkspace({
           etgb: new Decimal(0),
           etgbUnknown: 0,
           overhead: new Decimal(0),
-          tax: new Decimal(0),
           totalCosts: new Decimal(0),
-          profit: new Decimal(0),
+          preTaxProfit: new Decimal(0),
           economicProfit: new Decimal(0),
           economicMissing: 0,
           productionHours: new Decimal(0),
@@ -498,7 +532,134 @@ export function CalculatorWorkspace({
       ),
     [planRows, profitabilityThresholds.minimumCashProfitUsd],
   );
+  const aggregateTax = useMemo(
+    () =>
+      calculateAggregateTaxReserve(
+        planTotalsBeforeTax.preTaxProfit,
+        calculationInput.taxReserveRate,
+      ),
+    [calculationInput.taxReserveRate, planTotalsBeforeTax.preTaxProfit],
+  );
+  const planTotals = useMemo(() => {
+    const scenarioA = calculateAggregateTaxReserve(
+      planTotalsBeforeTax.scenarioACash,
+      calculationInput.taxReserveRate,
+    );
+    const scenarioB = calculateAggregateTaxReserve(
+      planTotalsBeforeTax.scenarioBCash,
+      calculationInput.taxReserveRate,
+    );
+    return {
+      ...planTotalsBeforeTax,
+      tax: aggregateTax.taxReserve,
+      profit: aggregateTax.finalProfit,
+      totalCosts: planTotalsBeforeTax.totalCosts.plus(aggregateTax.taxReserve),
+      economicProfit: planTotalsBeforeTax.economicProfit.minus(
+        aggregateTax.taxReserve,
+      ),
+      scenarioACash: scenarioA.finalProfit,
+      scenarioBCash: scenarioB.finalProfit,
+      scenarioAEconomic: planTotalsBeforeTax.scenarioAEconomic.minus(
+        scenarioA.taxReserve,
+      ),
+      scenarioBEconomic: planTotalsBeforeTax.scenarioBEconomic.minus(
+        scenarioB.taxReserve,
+      ),
+    };
+  }, [aggregateTax, calculationInput.taxReserveRate, planTotalsBeforeTax]);
   const selectedPlanRows = planRows.filter((row) => row.quantity > 0);
+  const selectedRepresentativeRow =
+    selectedPlanRows.find(
+      (row) => row.product.id === representativeProductId,
+    ) ?? selectedPlanRows[0];
+  const mixEconomics = useMemo(() => {
+    if (planTotals.units <= 0) return null;
+    const units = new Decimal(planTotals.units);
+    const variableCosts = planTotalsBeforeTax.totalCosts.minus(
+      planTotalsBeforeTax.overhead,
+    );
+    return {
+      averageSellerRevenue: planTotalsBeforeTax.revenue.div(units),
+      averageVariableCost: variableCosts.div(units),
+      averageContribution: planTotalsBeforeTax.revenue
+        .minus(variableCosts)
+        .div(units),
+      averageShipping: planTotalsBeforeTax.shipping.div(units),
+      averageEtsyFees: planTotalsBeforeTax.fees.div(units),
+      averageCustoms: planTotalsBeforeTax.customs.div(units),
+      averageProductionHours:
+        planTotalsBeforeTax.hoursMissing === 0
+          ? planTotalsBeforeTax.productionHours.div(units)
+          : null,
+      averageEconomicLabourCost:
+        planTotalsBeforeTax.economicMissing === 0
+          ? planTotalsBeforeTax.preTaxProfit
+              .minus(planTotalsBeforeTax.economicProfit)
+              .div(units)
+          : null,
+    };
+  }, [planTotals.units, planTotalsBeforeTax]);
+  const representativeEconomics = (() => {
+    const row = selectedRepresentativeRow;
+    if (!row?.calculation || !row.analysis) return null;
+    const totals = row.calculation.totals;
+    const contribution = totals.estimatedPreTaxProfit.plus(
+      totals.allocatedBusinessOverheadUsd,
+    );
+    return {
+      averageSellerRevenue: totals.grossRevenue,
+      averageVariableCost: totals.grossRevenue.minus(contribution),
+      averageContribution: contribution,
+      averageShipping: totals.internationalShippingUsd,
+      averageEtsyFees: totals.totalEtsyFees,
+      averageCustoms: totals.customsAndTariffUsd,
+      averageProductionHours: row.analysis.productionHoursPerUnit,
+      averageEconomicLabourCost: row.analysis.economicLabourCostUsd,
+    };
+  })();
+  const projectionEconomics =
+    projectionMixMode === "REPRESENTATIVE_PRODUCT"
+      ? representativeEconomics
+      : mixEconomics;
+  const annualFixedBusinessCostsUsd = annualOverheadEvidence
+    ? new Decimal(annualOverheadEvidence.annualTotalTry).div(
+        annualOverheadEvidence.usdTryRate,
+      )
+    : new Decimal(0);
+  const projectionFixedCosts =
+    projectionPeriod === "MONTHLY"
+      ? annualFixedBusinessCostsUsd.div(12)
+      : annualFixedBusinessCostsUsd;
+  const makeProjection = (quantity: string | number) => {
+    if (!projectionEconomics) return null;
+    const revenue = projectionPriceOverride
+      ? new Decimal(projectionPriceOverride)
+      : projectionEconomics.averageSellerRevenue;
+    let variableCost = projectionEconomics.averageVariableCost;
+    if (projectionShippingOverride) {
+      variableCost = variableCost
+        .minus(projectionEconomics.averageShipping)
+        .plus(projectionShippingOverride);
+    }
+    if (projectionContributionOverride) {
+      variableCost = revenue.minus(projectionContributionOverride);
+    }
+    return calculateSalesProjection({
+      salesQuantity: quantity,
+      averageSellerRevenue: revenue,
+      averageVariableCost: variableCost,
+      annualFixedBusinessCosts: projectionFixedCosts,
+      taxReserveRate: calculationInput.taxReserveRate,
+      averageProductionHours: projectionEconomics.averageProductionHours,
+      averageEconomicLabourCost: projectionEconomics.averageEconomicLabourCost,
+    });
+  };
+  const customProjection = makeProjection(projectedSalesQuantity);
+  const quickProjectionQuantities = [12, 20, 30, 50, 100];
+  const quickProjections = quickProjectionQuantities.map((quantity) => ({
+    quantity,
+    projection: makeProjection(quantity),
+  }));
   const sortedPlanRows = [...planRows].sort((a, b) => {
     const value = (row: (typeof planRows)[number]) => {
       if (!row.analysis) return new Decimal("-1e30");
@@ -522,17 +683,6 @@ export function CalculatorWorkspace({
   const cashPlanMargin = planTotals.revenue.gt(0)
     ? planTotals.profit.div(planTotals.revenue).mul(100)
     : null;
-  const economicPlanMargin =
-    planTotals.revenue.gt(0) && planTotals.economicMissing === 0
-      ? planTotals.economicProfit.div(planTotals.revenue).mul(100)
-      : null;
-  const averageCashPerHour = planTotals.productionHours.gt(0)
-    ? planTotals.profit.div(planTotals.productionHours)
-    : null;
-  const averageEconomicPerHour =
-    planTotals.productionHours.gt(0) && planTotals.economicMissing === 0
-      ? planTotals.economicProfit.div(planTotals.productionHours)
-      : null;
   const allocatedOverheadPerOrderTry = planTotals.units
     ? planTotals.overhead.div(planTotals.units).mul(calculationInput.usdTryRate)
     : null;
@@ -573,23 +723,21 @@ export function CalculatorWorkspace({
     <div className="mx-auto max-w-[1500px] space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="eyebrow">Calculation workspace</p>
+          <p className="eyebrow">Hesaplama alanı</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-[-.035em]">
-            Price and sales planning with every fee visible.
+            Tüm giderleri görünür fiyat ve satış planlaması
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-stone-500">
-            Choose a synchronized product to load its Etsy price and saved cost
-            version. Annual business spending is deducted only in Sales Plan, so
-            it cannot be counted again in the single-product calculator. Both
-            views use the planning tax reserve, exchange rate, shipping quote,
-            and customs quote when those records exist.
+            Etsy fiyatını ve kayıtlı maliyet sürümünü yüklemek için bir ürün
+            seçin. Yıllık işletme giderleri yalnızca Satış Planında düşülür ve
+            tek ürün hesabında tekrar sayılmaz.
           </p>
         </div>
         <button
           onClick={reset}
           className="inline-flex items-center justify-center gap-2 rounded-xl border bg-white px-4 py-2.5 text-sm"
         >
-          <RotateCcw size={15} /> Reset example
+          <RotateCcw size={15} /> Sıfırla
         </button>
       </header>
       <div className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-xl border bg-white p-1">
@@ -600,10 +748,10 @@ export function CalculatorWorkspace({
             className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium ${tab === item ? "bg-[#18342e] text-white" : "text-stone-500 hover:bg-stone-50"}`}
           >
             {item === "quick"
-              ? "Quick calculator"
+              ? "Hızlı hesap"
               : item === "reverse"
-                ? "Reverse pricing"
-                : "Sales plan"}
+                ? "Ters fiyatlama"
+                : "Satış planı"}
           </button>
         ))}
       </div>
@@ -612,14 +760,14 @@ export function CalculatorWorkspace({
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,.7fr)] lg:items-end">
             <label>
               <span className="mb-1.5 block text-xs font-medium text-stone-600">
-                Product
+                Ürün
               </span>
               <select
                 className="field"
                 value={selectedProductId}
                 onChange={(event) => selectProduct(event.target.value)}
               >
-                <option value="">Choose an Etsy product…</option>
+                <option value="">Bir Etsy ürünü seçin…</option>
                 {products.map((product) => (
                   <option key={product.id} value={product.id}>
                     {product.sku} · {product.listingTitle}
@@ -844,14 +992,14 @@ export function CalculatorWorkspace({
           <section className="card p-5 sm:p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="eyebrow">Annual sell-all scenario</p>
+                <p className="eyebrow">Mevcut planı sat</p>
                 <h2 className="mt-1 text-xl font-semibold">
-                  Plan selected products or sell all available listings
+                  Seçili ürünleri ve planlanan adetleri hesapla
                 </h2>
                 <p className="mt-2 text-sm text-stone-500">
-                  This is a fixed one-year view. Each planned unit uses its Etsy
-                  price and saved costs; all active recurring business costs are
-                  annualized and deducted once across the complete plan.
+                  Mevcut stok adedi ile yıllık beklenen satış adedi birbirinden
+                  ayrıdır. Her ürün kendi fiyatını, maliyetini ve lojistik
+                  kaydını kullanır.
                 </p>
               </div>
               <div className="flex gap-2">
@@ -859,84 +1007,172 @@ export function CalculatorWorkspace({
                   onClick={useAllAvailable}
                   className="rounded-xl bg-jade px-4 py-2.5 text-xs font-medium text-white"
                 >
-                  Use all available
+                  Tüm mevcut adetleri kullan
                 </button>
                 <button
                   onClick={clearPlan}
                   className="rounded-xl border bg-white px-4 py-2.5 text-xs font-medium"
                 >
-                  Clear
+                  Temizle
                 </button>
               </div>
             </div>
-            <div className="mt-5 rounded-xl bg-stone-50 p-4 text-xs leading-5 text-stone-600">
-              Annual business costs total{" "}
-              <strong>
+            <div className="mt-5 grid gap-3 border-t pt-5 md:grid-cols-4">
+              <label className="text-xs text-stone-500">
+                Gümrük senaryosu
+                <select
+                  className="field mt-1"
+                  value={
+                    calculationInput.includeCustomsInSellerProfit
+                      ? "SELLER_PAID"
+                      : "NOT_SELLER_PAID"
+                  }
+                  onChange={(event) =>
+                    set(
+                      "includeCustomsInSellerProfit",
+                      event.target.value === "SELLER_PAID",
+                    )
+                  }
+                >
+                  <option value="NOT_SELLER_PAID">
+                    Gümrük satıcı tarafından düşülmüyor
+                  </option>
+                  <option value="SELLER_PAID">
+                    Gümrük satıcı tarafından ödeniyor
+                  </option>
+                </select>
+              </label>
+              <label className="text-xs text-stone-500">
+                Sabit gider dağıtım yöntemi
+                <select
+                  className="field mt-1"
+                  value={fixedOverheadMode}
+                  onChange={(event) =>
+                    setFixedOverheadMode(
+                      event.target.value as FixedOverheadMode,
+                    )
+                  }
+                >
+                  <option value="EXPECTED_ANNUAL_SALES">
+                    Yıllık beklenen satış adedine göre dağıt
+                  </option>
+                  <option value="FULL_ANNUAL">
+                    Yıllık sabit giderin tamamını bu plana yükle
+                  </option>
+                  <option value="EXCLUDED">Sabit giderleri hariç tut</option>
+                </select>
+              </label>
+              <NumberField
+                label="Beklenen yıllık satış"
+                value={new Decimal(
+                  calculationInput.expectedMonthlyOrders || 0,
+                ).mul(12)}
+                suffix="ADET"
+                onChange={(value) =>
+                  set(
+                    "expectedMonthlyOrders",
+                    new Decimal(value || 0).div(12).toString(),
+                  )
+                }
+              />
+              <div className="rounded-xl bg-stone-50 p-4 text-xs leading-5 text-stone-600">
+                Yıllık toplam:{" "}
+                {formatMoney(
+                  annualOverheadEvidence?.annualTotalTry ?? 0,
+                  "TRY",
+                )}
+                <br />
+                Bu plana yüklenen:{" "}
                 {formatMoney(planOverhead.totalPlanOverheadTry, "TRY")}
-              </strong>
-              . The complete annual amount is deducted exactly once across the{" "}
-              {plannedUnitCount} planned unit(s). Monthly costs are multiplied
-              by 12; annual costs are counted once; entered VAT is included.
+                {fixedOverheadMode === "EXPECTED_ANNUAL_SALES" && (
+                  <>
+                    <br />
+                    Beklenen yıllık satış:{" "}
+                    {new Decimal(calculationInput.expectedMonthlyOrders || 0)
+                      .mul(12)
+                      .toString()}{" "}
+                    adet
+                  </>
+                )}
+              </div>
             </div>
           </section>
           {selectedPlanRows.length > 0 && missingPlanInputs.length > 0 && (
-            <section className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-950">
+            <section
+              id="data-gaps"
+              className="scroll-mt-4 rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-950"
+            >
               <div className="flex gap-3">
                 <AlertTriangle className="mt-0.5 shrink-0" size={18} />
                 <div>
                   <h3 className="font-semibold">
-                    Profit is preliminary because required costs are zero
+                    Zorunlu maliyetler eksik olduğu için sonuç geçicidir
                   </h3>
                   <p className="mt-1 leading-6">
-                    Missing or zero: {missingPlanInputs.join(", ")}. Enter these
-                    under Quick calculator or save the corresponding product,
-                    shipping, customs, business and tax-planning records. Zero
-                    is never treated as a confirmed free cost.
+                    Eksik veya sıfır görünen alanlar:{" "}
+                    {missingPlanInputs.join(", ")}. Hızlı hesapta değer girin ya
+                    da ilgili ürün, kargo, gümrük, işletme ve vergi planlama
+                    kaydını kaydedin. Sıfır değer, doğrulanmış ücretsiz maliyet
+                    sayılmaz.
                   </p>
                 </div>
               </div>
             </section>
           )}
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <nav
+            className="flex gap-2 overflow-x-auto rounded-xl border bg-white p-2 text-sm"
+            aria-label="Satış planı bölümleri"
+          >
+            {[
+              ["#plan-summary", "Özet"],
+              ["#sales-projection", "Satış Projeksiyonu"],
+              ["#product-profitability", "Ürün Bazında Kârlılık"],
+              ["#deduction-details", "Gider Detayları"],
+              ["#scenario-comparison", "Senaryo Karşılaştırması"],
+              ["#data-gaps", "Veri Eksikleri"],
+            ].map(([href, label]) => (
+              <a
+                className="shrink-0 rounded-lg px-3 py-2 hover:bg-stone-100"
+                href={href}
+                key={href}
+              >
+                {label}
+              </a>
+            ))}
+          </nav>
+          <section
+            id="plan-summary"
+            className="grid scroll-mt-4 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+          >
             <PlanMetric
-              label="Planned units"
+              label={tr.finance.plannedUnits}
               value={String(planTotals.units)}
             />
-            <PlanMetric label="Planning period" value="One year" />
             <PlanMetric
-              label="Annual business costs"
+              label="Yüklenen sabit işletme giderleri"
               value={formatMoney(planOverhead.totalPlanOverheadTry, "TRY")}
             />
             <PlanMetric
-              label="Seller revenue"
+              label={tr.finance.sellerRevenue}
               value={formatMoney(planTotals.revenue, "USD")}
             />
             <PlanMetric
-              label="Cash profit"
+              label={tr.finance.contributionProfit}
+              value={formatMoney(
+                planTotals.preTaxProfit.plus(planTotals.overhead),
+                "USD",
+              )}
+            />
+            <PlanMetric
+              label={tr.finance.cashProfit}
               value={formatMoney(planTotals.profit, "USD")}
             />
             <PlanMetric
-              label="Economic profit"
-              value={
-                planTotals.economicMissing === 0
-                  ? formatMoney(planTotals.economicProfit, "USD")
-                  : "Economic labour cost not configured"
-              }
-            />
-            <PlanMetric
-              label="Cash margin"
+              label={tr.finance.profitMargin}
               value={cashPlanMargin ? `${cashPlanMargin.toFixed(1)}%` : "N/A"}
             />
             <PlanMetric
-              label="Economic margin"
-              value={
-                economicPlanMargin
-                  ? `${economicPlanMargin.toFixed(1)}%`
-                  : "Not configured"
-              }
-            />
-            <PlanMetric
-              label="Average cash profit / unit"
+              label="Ürün başına ortalama nakit kâr"
               value={
                 planTotals.units
                   ? formatMoney(planTotals.profit.div(planTotals.units), "USD")
@@ -944,141 +1180,367 @@ export function CalculatorWorkspace({
               }
             />
             <PlanMetric
-              label="Average economic profit / unit"
+              label={tr.finance.breakEven}
               value={
-                planTotals.units && planTotals.economicMissing === 0
-                  ? formatMoney(
-                      planTotals.economicProfit.div(planTotals.units),
-                      "USD",
-                    )
-                  : "Not configured"
+                customProjection?.breakEvenSales?.toString() ?? "Uygulanamaz"
               }
-            />
-            <PlanMetric
-              label="Average cash profit / hour"
-              value={
-                averageCashPerHour
-                  ? formatMoney(averageCashPerHour, "USD")
-                  : "Production time not configured."
-              }
-            />
-            <PlanMetric
-              label="Average economic profit / hour"
-              value={
-                averageEconomicPerHour
-                  ? formatMoney(averageEconomicPerHour, "USD")
-                  : planTotals.economicMissing > 0
-                    ? "Economic labour cost not configured"
-                    : "Production time not configured."
-              }
-            />
-            <PlanMetric
-              label="Products below minimum profit"
-              value={String(planTotals.belowMinimum)}
-            />
-            <PlanMetric
-              label="Products with missing labour/time"
-              value={String(
-                Math.max(planTotals.economicMissing, planTotals.hoursMissing),
-              )}
-            />
-            <PlanMetric
-              label="Grade counts"
-              value={`A ${planTotals.gradeA} · B ${planTotals.gradeB} · C ${planTotals.gradeC} · D ${planTotals.gradeD}`}
             />
           </section>
+          <section
+            id="sales-projection"
+            className="card scroll-mt-4 p-5 sm:p-6"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="eyebrow">Satış Adedi Projeksiyonu</p>
+                <h3 className="mt-1 text-xl font-semibold">
+                  Farklı satış adetlerinde sonuç
+                </h3>
+                <p className="mt-2 max-w-3xl text-xs leading-5 text-stone-500">
+                  Bu projeksiyon, gelecekteki satışların mevcut plandaki ürün
+                  karması ve ortalama maliyet yapısına benzer olacağını
+                  varsayar.
+                </p>
+              </div>
+              {customProjection?.breakEvenSales && (
+                <div className="rounded-xl bg-emerald-50 p-3 text-right">
+                  <p className="text-xs text-emerald-700">
+                    Başabaş satış adedi
+                  </p>
+                  <p className="text-xl font-semibold text-emerald-950">
+                    {customProjection.breakEvenSales.toString()}
+                  </p>
+                </div>
+              )}
+            </div>
+            {!projectionEconomics ? (
+              <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                Projeksiyon için planda en az bir ürün ve bir adet seçin.
+              </p>
+            ) : (
+              <>
+                <div className="mt-5 grid gap-3 border-t pt-5 md:grid-cols-3">
+                  <label className="text-xs text-stone-500">
+                    Ürün karması
+                    <select
+                      className="field mt-1"
+                      value={projectionMixMode}
+                      onChange={(event) =>
+                        setProjectionMixMode(
+                          event.target.value as typeof projectionMixMode,
+                        )
+                      }
+                    >
+                      <option value="CURRENT_MIX">Mevcut ürün karması</option>
+                      <option value="REPRESENTATIVE_PRODUCT">
+                        Temsilci ürün
+                      </option>
+                    </select>
+                  </label>
+                  {projectionMixMode === "REPRESENTATIVE_PRODUCT" && (
+                    <label className="text-xs text-stone-500">
+                      Temsilci ürün
+                      <select
+                        className="field mt-1"
+                        value={
+                          representativeProductId ||
+                          selectedRepresentativeRow?.product.id ||
+                          ""
+                        }
+                        onChange={(event) =>
+                          setRepresentativeProductId(event.target.value)
+                        }
+                      >
+                        {selectedPlanRows.map((row) => (
+                          <option key={row.product.id} value={row.product.id}>
+                            {row.product.sku} · {row.product.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  <label className="text-xs text-stone-500">
+                    Planlama dönemi
+                    <select
+                      className="field mt-1"
+                      value={projectionPeriod}
+                      onChange={(event) =>
+                        setProjectionPeriod(
+                          event.target.value as typeof projectionPeriod,
+                        )
+                      }
+                    >
+                      <option value="ANNUAL">Yıllık</option>
+                      <option value="MONTHLY">Aylık</option>
+                    </select>
+                  </label>
+                  <NumberField
+                    label="Özel satış adedi"
+                    value={projectedSalesQuantity}
+                    suffix="ADET"
+                    onChange={setProjectedSalesQuantity}
+                  />
+                  <NumberField
+                    label="Ortalama satış fiyatı (isteğe bağlı)"
+                    value={projectionPriceOverride}
+                    suffix="USD"
+                    onChange={setProjectionPriceOverride}
+                  />
+                  <NumberField
+                    label="Ortalama kargo (isteğe bağlı)"
+                    value={projectionShippingOverride}
+                    suffix="USD"
+                    onChange={setProjectionShippingOverride}
+                  />
+                  <NumberField
+                    label="Ürün başına katkı (isteğe bağlı)"
+                    value={projectionContributionOverride}
+                    suffix="USD"
+                    onChange={setProjectionContributionOverride}
+                  />
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <PlanMetric
+                    label="Satış başına satıcı geliri"
+                    value={formatMoney(
+                      projectionPriceOverride ||
+                        projectionEconomics.averageSellerRevenue,
+                      "USD",
+                    )}
+                  />
+                  <PlanMetric
+                    label="Satış başına değişken gider"
+                    value={formatMoney(
+                      projectionEconomics.averageVariableCost,
+                      "USD",
+                    )}
+                  />
+                  <PlanMetric
+                    label="Ürün başına katkı"
+                    value={formatMoney(
+                      customProjection?.averageContribution ?? 0,
+                      "USD",
+                    )}
+                  />
+                  <PlanMetric
+                    label="Sabit işletme giderleri"
+                    value={formatMoney(projectionFixedCosts, "USD")}
+                  />
+                </div>
+                {customProjection && (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                    <PlanMetric
+                      label="Öngörülen satıcı geliri"
+                      value={formatMoney(
+                        customProjection.projectedRevenue,
+                        "USD",
+                      )}
+                    />
+                    <PlanMetric
+                      label="Vergi öncesi sonuç"
+                      value={formatMoney(
+                        customProjection.aggregatePreTaxProfit,
+                        "USD",
+                      )}
+                    />
+                    <PlanMetric
+                      label="Vergi planlama rezervi"
+                      value={formatMoney(customProjection.taxReserve, "USD")}
+                    />
+                    <PlanMetric
+                      label="Nakit kâr"
+                      value={formatMoney(
+                        customProjection.finalCashProfit,
+                        "USD",
+                      )}
+                    />
+                    <PlanMetric
+                      label="Durum"
+                      value={projectionStatus(
+                        customProjection.finalCashProfit,
+                        customProjection.economicProfit,
+                      )}
+                    />
+                  </div>
+                )}
+                <div className="mt-5 overflow-x-auto rounded-xl border">
+                  <table className="w-full min-w-[1050px] text-left text-xs">
+                    <thead className="bg-stone-50 text-stone-500">
+                      <tr>
+                        <th className="p-3">Satış adedi</th>
+                        <th className="p-3">Satıcı geliri</th>
+                        <th className="p-3">Katkı kârı</th>
+                        <th className="p-3">Sabit gider</th>
+                        <th className="p-3">Vergi öncesi</th>
+                        <th className="p-3">Vergi rezervi</th>
+                        <th className="p-3">Nakit kâr</th>
+                        <th className="p-3">Ekonomik kâr</th>
+                        <th className="p-3">Nakit marjı</th>
+                        <th className="p-3">Durum</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {quickProjections.map(({ quantity, projection }) =>
+                        projection ? (
+                          <tr
+                            className="cursor-pointer border-t hover:bg-stone-50"
+                            key={quantity}
+                            onClick={() =>
+                              setProjectedSalesQuantity(String(quantity))
+                            }
+                          >
+                            <td className="p-3 font-semibold">{quantity}</td>
+                            <td className="p-3">
+                              {formatMoney(projection.projectedRevenue, "USD")}
+                            </td>
+                            <td className="p-3">
+                              {formatMoney(
+                                projection.projectedContribution,
+                                "USD",
+                              )}
+                            </td>
+                            <td className="p-3">
+                              {formatMoney(
+                                projection.fixedBusinessCosts,
+                                "USD",
+                              )}
+                            </td>
+                            <td className="p-3">
+                              {formatMoney(
+                                projection.aggregatePreTaxProfit,
+                                "USD",
+                              )}
+                            </td>
+                            <td className="p-3">
+                              {formatMoney(projection.taxReserve, "USD")}
+                            </td>
+                            <td className="p-3 font-semibold">
+                              {formatMoney(projection.finalCashProfit, "USD")}
+                            </td>
+                            <td className="p-3">
+                              {projection.economicProfit
+                                ? formatMoney(projection.economicProfit, "USD")
+                                : "Yapılandırılmamış"}
+                            </td>
+                            <td className="p-3">
+                              {projection.cashMargin
+                                ? `${projection.cashMargin.toFixed(1)}%`
+                                : "Uygulanamaz"}
+                            </td>
+                            <td className="p-3">
+                              {projectionStatus(
+                                projection.finalCashProfit,
+                                projection.economicProfit,
+                              )}
+                            </td>
+                          </tr>
+                        ) : null,
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </section>
           {selectedPlanRows.length > 0 && (
-            <section className="grid gap-3 md:grid-cols-2">
-              <div className="card p-5">
-                <p className="eyebrow">Scenario A · customs not seller-paid</p>
-                <h3 className="mt-2 font-semibold">
-                  Seller logistics{" "}
-                  {formatMoney(
-                    planTotals.shipping.plus(planTotals.etgb),
-                    "USD",
-                  )}
-                </h3>
-                <p className="mt-2 text-xs leading-5 text-stone-500">
-                  Customs exposure{" "}
-                  {formatMoney(planTotals.customsExposure, "USD")} remains
-                  visible but is not deducted.
-                </p>
-                <ScenarioMetrics
-                  cash={planTotals.scenarioACash}
-                  economic={planTotals.scenarioAEconomic}
-                  economicMissing={planTotals.economicMissing > 0}
-                  customsDeducted={new Decimal(0)}
-                  revenue={planTotals.revenue}
-                  losses={planTotals.scenarioALosses}
-                  gradeChanges={planTotals.gradeChanges}
-                  difference={planTotals.scenarioACash.minus(
-                    planTotals.scenarioBCash,
-                  )}
-                />
+            <details
+              id="scenario-comparison"
+              className="card scroll-mt-4 overflow-hidden"
+            >
+              <summary className="cursor-pointer border-b p-5 font-semibold">
+                Senaryo Karşılaştırması
+              </summary>
+              <div className="grid gap-3 p-3 md:grid-cols-2">
+                <div className="card p-5">
+                  <p className="eyebrow">
+                    Senaryo A · gümrük satıcıya ait değil
+                  </p>
+                  <h3 className="mt-2 font-semibold">
+                    Satıcı lojistiği{" "}
+                    {formatMoney(
+                      planTotals.shipping.plus(planTotals.etgb),
+                      "USD",
+                    )}
+                  </h3>
+                  <p className="mt-2 text-xs leading-5 text-stone-500">
+                    {formatMoney(planTotals.customsExposure, "USD")} tutarındaki
+                    gümrük riski görünür, ancak düşülmez.
+                  </p>
+                  <ScenarioMetrics
+                    cash={planTotals.scenarioACash}
+                    economic={planTotals.scenarioAEconomic}
+                    economicMissing={planTotals.economicMissing > 0}
+                    customsDeducted={new Decimal(0)}
+                    revenue={planTotals.revenue}
+                    losses={planTotals.scenarioALosses}
+                    gradeChanges={planTotals.gradeChanges}
+                    difference={planTotals.scenarioACash.minus(
+                      planTotals.scenarioBCash,
+                    )}
+                  />
+                </div>
+                <div className="card p-5">
+                  <p className="eyebrow">Senaryo B · gümrük satıcıya ait</p>
+                  <h3 className="mt-2 font-semibold">
+                    Satıcı lojistiği{" "}
+                    {formatMoney(
+                      planTotals.shipping
+                        .plus(planTotals.etgb)
+                        .plus(planTotals.customsExposure),
+                      "USD",
+                    )}
+                  </h3>
+                  <p className="mt-2 text-xs leading-5 text-stone-500">
+                    Yalnızca karşılaştırmadır; DDP veya yasal sorumluluk
+                    hakkında varsayım oluşturmaz.
+                  </p>
+                  <ScenarioMetrics
+                    cash={planTotals.scenarioBCash}
+                    economic={planTotals.scenarioBEconomic}
+                    economicMissing={planTotals.economicMissing > 0}
+                    customsDeducted={planTotals.customsExposure}
+                    revenue={planTotals.revenue}
+                    losses={planTotals.scenarioBLosses}
+                    gradeChanges={planTotals.gradeChanges}
+                    difference={planTotals.scenarioBCash.minus(
+                      planTotals.scenarioACash,
+                    )}
+                  />
+                </div>
               </div>
-              <div className="card p-5">
-                <p className="eyebrow">Scenario B · customs seller-paid</p>
-                <h3 className="mt-2 font-semibold">
-                  Seller logistics{" "}
-                  {formatMoney(
-                    planTotals.shipping
-                      .plus(planTotals.etgb)
-                      .plus(planTotals.customsExposure),
-                    "USD",
-                  )}
-                </h3>
-                <p className="mt-2 text-xs leading-5 text-stone-500">
-                  Comparison only. This does not infer DDP or who is legally
-                  responsible.
-                </p>
-                <ScenarioMetrics
-                  cash={planTotals.scenarioBCash}
-                  economic={planTotals.scenarioBEconomic}
-                  economicMissing={planTotals.economicMissing > 0}
-                  customsDeducted={planTotals.customsExposure}
-                  revenue={planTotals.revenue}
-                  losses={planTotals.scenarioBLosses}
-                  gradeChanges={planTotals.gradeChanges}
-                  difference={planTotals.scenarioBCash.minus(
-                    planTotals.scenarioACash,
-                  )}
-                />
-              </div>
-            </section>
+            </details>
           )}
           {gradeChangeProducts.length > 0 && (
             <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-              Products changing profitability grade when seller-paid customs is
-              deducted: {gradeChangeProducts.join(", ")}.
+              Satıcı tarafından ödenen gümrük düşüldüğünde kârlılık notu değişen
+              ürünler: {gradeChangeProducts.join(", ")}.
             </p>
           )}
           {selectedPlanRows.length > 0 && (
-            <section className="card overflow-hidden">
-              <div className="border-b p-5">
-                <h3 className="font-semibold">Scenario deduction audit</h3>
-                <p className="mt-1 text-xs text-stone-500">
-                  This shows exactly what was deducted. A $0.00 line is not
-                  configured and is the reason an apparent profit can be too
-                  high.
-                </p>
-              </div>
+            <details
+              id="deduction-details"
+              className="card scroll-mt-4 overflow-hidden"
+            >
+              <summary className="cursor-pointer border-b p-5 font-semibold">
+                Gider dökümü ve veri kaynakları
+              </summary>
               <div className="grid gap-px bg-stone-200 sm:grid-cols-2 xl:grid-cols-4">
                 <Deduction
-                  label="Materials"
+                  label="Malzemeler"
                   value={planTotals.materials}
                   description="Yarn, lining, handles and itemized material components."
                   source={planningSources.products}
                   href="/products"
                 />
                 <Deduction
-                  label="Labour"
+                  label="Emek"
                   value={planTotals.labor}
                   description="Saved labour hours multiplied by the planning hourly rate."
                   source={planningSources.products}
                   href="/products"
                 />
                 <Deduction
-                  label="Packaging"
+                  label="Paketleme"
                   value={planTotals.packaging}
                   displayValue={
                     annualPackagingBudgetIncluded
@@ -1097,14 +1559,14 @@ export function CalculatorWorkspace({
                   href="/products"
                 />
                 <Deduction
-                  label="Other direct product costs"
+                  label="Diğer doğrudan ürün giderleri"
                   value={planTotals.otherDirect}
                   description="Maker payment, equipment allocation and other direct product costs."
                   source={planningSources.products}
                   href="/products"
                 />
                 <Deduction
-                  label="International shipping"
+                  label="Uluslararası kargo"
                   value={planTotals.shipping}
                   description="International transport only; customs, ETGB, insurance and marketplace fees remain separate."
                   source={planningSources.shipping}
@@ -1126,7 +1588,7 @@ export function CalculatorWorkspace({
                   href="/customs-etgb"
                 />
                 <Deduction
-                  label="Customs + destination"
+                  label="Gümrük + varış giderleri"
                   value={planTotals.customs}
                   description="Destination-specific duty, tariff, brokerage, clearance and carrier processing."
                   source={planningSources.customs}
@@ -1165,7 +1627,7 @@ export function CalculatorWorkspace({
                           </div>
                         ))}
                         <p className="mt-1 flex justify-between gap-3 border-t pt-1 font-semibold">
-                          <span>Annual total</span>
+                          <span>Yıllık toplam</span>
                           <span>
                             {formatMoney(
                               annualOverheadEvidence.annualTotalTry,
@@ -1195,47 +1657,66 @@ export function CalculatorWorkspace({
                   }
                 />
                 <Deduction
-                  label="Etsy fees + fee VAT"
+                  label="Etsy ücretleri + ücret KDV'si"
                   value={planTotals.fees}
                   description="Listing, transaction, payment processing, regulatory, conversion and applicable fee VAT."
                   source={planningSources.fees}
                   href="/fees"
                 />
                 <Deduction
-                  label="Tax planning reserve"
+                  label="Vergi planlama rezervi"
                   value={planTotals.tax}
-                  description="A planning reserve on positive estimated profit, not a filed tax liability."
+                  displayValue={
+                    planTotals.preTaxProfit.lte(0)
+                      ? "$0.00 · No reserve because aggregate pre-tax planning profit is not positive."
+                      : undefined
+                  }
+                  missingOverride={false}
+                  description={
+                    planTotals.preTaxProfit.gt(0)
+                      ? `${new Decimal(calculationInput.taxReserveRate).toString()}% reserve on positive aggregate pre-tax planning profit.`
+                      : "The aggregate result after every non-tax deduction is zero or negative."
+                  }
                   source={planningSources.tax}
                   href="/business"
                 />
                 <Deduction
-                  label="Other logistics + reserves"
+                  label="Diğer lojistik + rezervler"
                   value={otherPlanCosts}
                   description="Domestic transfer, pickup, returns, damage, exchange-loss and other operating assumptions."
                   source={planningSources.reserves}
                   href="/calculator"
                 />
                 <Deduction
-                  label="All deductions"
-                  value={planTotals.totalCosts}
+                  label="Toplam vergi öncesi sonuç"
+                  value={planTotals.preTaxProfit}
                 />
+                <Deduction label="Tüm giderler" value={planTotals.totalCosts} />
                 <Deduction
-                  label="Preliminary remainder"
+                  label="Nihai geçici sonuç"
                   value={planTotals.profit}
+                  description="Aggregate pre-tax result minus the aggregate tax planning reserve."
                 />
               </div>
-            </section>
+            </details>
           )}
-          <section className="card overflow-hidden">
+          <details
+            id="product-profitability"
+            className="card scroll-mt-4 overflow-hidden"
+          >
+            <summary className="cursor-pointer border-b p-5 font-semibold">
+              Ürün Bazında Kârlılık
+            </summary>
             <div className="flex flex-wrap items-center justify-between gap-3 border-b p-5">
               <div>
-                <h3 className="font-semibold">Profitability by product</h3>
+                <h3 className="font-semibold">Ürün Bazında Kârlılık</h3>
                 <p className="mt-1 text-xs text-stone-500">
-                  Cash and economic views use the same canonical calculation.
+                  Ürün satırları vergi öncesi sonucu gösterir; vergi rezervi
+                  yalnızca toplam plan sonucuna bir kez uygulanır.
                 </p>
               </div>
               <label className="text-xs text-stone-500">
-                Sort by
+                Sırala
                 <select
                   className="field mt-1 py-2"
                   value={profitSort}
@@ -1243,14 +1724,12 @@ export function CalculatorWorkspace({
                     setProfitSort(event.target.value as typeof profitSort)
                   }
                 >
-                  <option value="cashProfit">Cash profit / unit</option>
-                  <option value="economicProfit">Economic profit / unit</option>
-                  <option value="cashPerHour">Cash profit / hour</option>
-                  <option value="economicPerHour">
-                    Economic profit / hour
-                  </option>
-                  <option value="cashMargin">Cash margin</option>
-                  <option value="economicMargin">Economic margin</option>
+                  <option value="cashProfit">Vergi öncesi sonuç / adet</option>
+                  <option value="economicProfit">Ekonomik sonuç / adet</option>
+                  <option value="cashPerHour">Vergi öncesi sonuç / saat</option>
+                  <option value="economicPerHour">Ekonomik sonuç / saat</option>
+                  <option value="cashMargin">Vergi öncesi marj</option>
+                  <option value="economicMargin">Ekonomik marj</option>
                 </select>
               </label>
             </div>
@@ -1258,15 +1737,15 @@ export function CalculatorWorkspace({
               <table className="w-full min-w-[1400px] text-left text-sm">
                 <thead className="bg-stone-50 text-xs text-stone-400">
                   <tr>
-                    <th className="px-5 py-3">Product</th>
-                    <th>State / available</th>
-                    <th>Planned quantity</th>
-                    <th>Buyer price</th>
-                    <th>Cash / economic profit</th>
-                    <th>Margins</th>
-                    <th>Production efficiency</th>
-                    <th>Grade / risks</th>
-                    <th>Planned profit</th>
+                    <th className="px-5 py-3">Ürün</th>
+                    <th>Durum / mevcut</th>
+                    <th>Planlanan adet</th>
+                    <th>Müşteri satış fiyatı</th>
+                    <th>Vergi öncesi / ekonomik sonuç</th>
+                    <th>Marjlar</th>
+                    <th>Üretim verimliliği</th>
+                    <th>Not / riskler</th>
+                    <th>Planlanan vergi öncesi sonuç</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1315,12 +1794,12 @@ export function CalculatorWorkspace({
                             <>
                               <strong>
                                 {formatMoney(analysis.cashProfitPerUnit, "USD")}{" "}
-                                cash
+                                vergi öncesi
                               </strong>
                               <span className="block text-xs text-stone-500">
                                 {analysis.economicProfitPerUnit
-                                  ? `${formatMoney(analysis.economicProfitPerUnit, "USD")} economic`
-                                  : "Economic labour cost not configured"}
+                                  ? `${formatMoney(analysis.economicProfitPerUnit, "USD")} ekonomik`
+                                  : "Ekonomik emek maliyeti yapılandırılmamış"}
                               </span>
                             </>
                           ) : (
@@ -1433,22 +1912,29 @@ export function CalculatorWorkspace({
                 </tbody>
               </table>
             </div>
-          </section>
-          <ProfitabilitySimulator
-            products={products
-              .filter((product) => product.currency === "USD")
-              .map((product) => ({
-                ...product,
-                packagingCostTry: annualPackagingBudgetIncluded
-                  ? "0"
-                  : product.packagingCostTry,
-              }))}
-            baseInput={planCalculationInput}
-            thresholds={profitabilityThresholds}
-            targetsSource={profitabilityTargetsSource}
-            overheadContextLabel={`One annual total allocated across ${plannedUnitCount} planned unit(s)`}
-            showOverheadSensitivity={false}
-          />
+          </details>
+          <details className="card overflow-hidden">
+            <summary className="cursor-pointer border-b p-5 font-semibold">
+              Kârlılık duyarlılık analizi
+            </summary>
+            <div className="p-3">
+              <ProfitabilitySimulator
+                products={products
+                  .filter((product) => product.currency === "USD")
+                  .map((product) => ({
+                    ...product,
+                    packagingCostTry: annualPackagingBudgetIncluded
+                      ? "0"
+                      : product.packagingCostTry,
+                  }))}
+                baseInput={planCalculationInput}
+                thresholds={profitabilityThresholds}
+                targetsSource={profitabilityTargetsSource}
+                overheadContextLabel={`Vergi öncesi analiz · ${plannedUnitCount} planlanan adet`}
+                showOverheadSensitivity={false}
+              />
+            </div>
+          </details>
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
             <AlertTriangle className="mr-1.5 inline" size={14} />
             This is a planning scenario, not a filed tax calculation. Each row
@@ -1482,6 +1968,17 @@ function InputSection({
       {children}
     </section>
   );
+}
+
+function projectionStatus(
+  finalCashProfit: Decimal,
+  economicProfit: Decimal | null,
+) {
+  if (economicProfit === null) return "İşçilik verisi eksik";
+  if (finalCashProfit.gt(0) && economicProfit.lt(0)) return "Ekonomik zarar";
+  if (finalCashProfit.gt(0)) return "Kârlı";
+  if (finalCashProfit.eq(0)) return "Başabaş";
+  return "Zarar";
 }
 function PlanMetric({ label, value }: { label: string; value: string }) {
   return (
@@ -1517,17 +2014,17 @@ function ScenarioMetrics({
   return (
     <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">
       <div>
-        <dt className="text-stone-400">Cash profit</dt>
+        <dt className="text-stone-400">Nakit kâr</dt>
         <dd className="font-semibold">{formatMoney(cash, "USD")}</dd>
       </div>
       <div>
-        <dt className="text-stone-400">Economic profit</dt>
+        <dt className="text-stone-400">Ekonomik kâr</dt>
         <dd className="font-semibold">
           {economicMissing ? "Not configured" : formatMoney(economic, "USD")}
         </dd>
       </div>
       <div>
-        <dt className="text-stone-400">Customs deducted</dt>
+        <dt className="text-stone-400">Düşülen gümrük</dt>
         <dd className="font-semibold">
           {customsDeducted.eq(0)
             ? "Not deducted"
@@ -1535,22 +2032,22 @@ function ScenarioMetrics({
         </dd>
       </div>
       <div>
-        <dt className="text-stone-400">Margins</dt>
+        <dt className="text-stone-400">Marjlar</dt>
         <dd>
           {cashMargin ? `${cashMargin.toFixed(1)}%` : "N/A"} cash ·{" "}
           {economicMargin ? `${economicMargin.toFixed(1)}%` : "N/A"} economic
         </dd>
       </div>
       <div>
-        <dt className="text-stone-400">Difference</dt>
+        <dt className="text-stone-400">Fark</dt>
         <dd>{formatMoney(difference, "USD")}</dd>
       </div>
       <div>
-        <dt className="text-stone-400">Loss-making products</dt>
+        <dt className="text-stone-400">Zarar eden ürünler</dt>
         <dd>{losses}</dd>
       </div>
       <div>
-        <dt className="text-stone-400">Products changing grade</dt>
+        <dt className="text-stone-400">Notu değişen ürünler</dt>
         <dd>{gradeChanges}</dd>
       </div>
     </dl>
@@ -1584,7 +2081,7 @@ function Deduction({
         {displayValue ?? formatMoney(value, "USD")}
       </p>
       {missing && (
-        <p className="mt-1 text-[11px] text-red-600">Not configured</p>
+        <p className="mt-1 text-[11px] text-red-600">Yapılandırılmamış</p>
       )}
       {description && (
         <p className="mt-2 text-[11px] leading-4 text-stone-500">
@@ -1593,7 +2090,7 @@ function Deduction({
       )}
       {source && (
         <p className="mt-2 text-[11px] leading-4 text-stone-600">
-          <span className="font-medium">Source:</span> {source}
+          <span className="font-medium">Kaynak:</span> {source}
         </p>
       )}
       {details}
