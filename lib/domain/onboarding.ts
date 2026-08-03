@@ -45,10 +45,13 @@ export function workspaceCompleteness(input: {
 }) {
   const productStates = input.products.map(productCompleteness);
   const includedProducts = productStates.filter((item) => item.ready).length;
+  const productCostsConfigured = input.products.filter((product) => known(product.materialCost) && known(product.laborHours) && known(product.laborRate)).length;
+  const shippingConfigured = input.products.filter((product) => known(product.shippingCost)).length;
   const dimensions: CompletenessDimension[] = [
     { key: "products_imported", label: "Products imported", status: input.importedListings > 0 ? "COMPLETE" : "MISSING", blocking: true },
     { key: "products_linked", label: "Products linked", status: input.linkedProducts === 0 ? "MISSING" : input.linkedProducts < input.importedListings ? "PARTIAL" : "COMPLETE", blocking: true },
-    { key: "product_costs", label: "Product costs", status: includedProducts === 0 ? "MISSING" : includedProducts < input.products.length ? "PARTIAL" : "COMPLETE", blocking: true },
+    { key: "product_costs", label: "Product costs", status: productCostsConfigured === 0 ? "MISSING" : productCostsConfigured < input.products.length ? "PARTIAL" : "COMPLETE", blocking: true },
+    { key: "shipping", label: "Shipping costs", status: shippingConfigured === 0 ? "MISSING" : shippingConfigured < input.products.length ? "PARTIAL" : "COMPLETE", blocking: true },
     { key: "marketplace_fees", label: "Marketplace fees", status: input.marketplaceFeesAvailable ? "COMPLETE" : "MISSING", blocking: false },
     { key: "destination", label: "Destination selected", status: input.destinationSelected ? "COMPLETE" : "MISSING", blocking: true },
     { key: "tariff", label: "Tariff/customs", status: input.tariffConfigured ? "COMPLETE" : "PARTIAL", blocking: false },
@@ -63,7 +66,7 @@ export function workspaceCompleteness(input: {
     excludedProducts: input.products.length - includedProducts,
     readiness: blockers.length === 0
       ? (includedProducts === input.products.length ? "Ready for detailed profitability" : "Ready for an initial estimate")
-      : blockers.some((item) => item.key === "product_costs") ? "Needs product costs" : "Needs setup details",
+      : blockers.some((item) => item.key === "product_costs") ? "Needs product costs" : blockers.some((item) => item.key === "shipping") ? "Needs shipping costs" : "Needs setup details",
     blockingGaps: blockers.map((item) => item.label),
   };
 }

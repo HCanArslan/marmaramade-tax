@@ -30,6 +30,13 @@ describe("Prompt 5 completeness and first-result boundary", () => {
     expect(result.warnings).toContain("Material cost is missing.");
   });
 
+  it("reports shipping separately from configured product costs", () => {
+    const result = workspaceCompleteness({ importedListings: 1, linkedProducts: 1, products: [{ materialCost: "10", laborHours: "1", laborRate: "5", packagingCost: "2", shippingCost: null }], marketplaceFeesAvailable: true, destinationSelected: true, businessProfileSelected: true });
+    expect(result.readiness).toBe("Needs shipping costs");
+    expect(result.dimensions.find((item) => item.key === "product_costs")?.status).toBe("COMPLETE");
+    expect(result.dimensions.find((item) => item.key === "shipping")?.status).toBe("MISSING");
+  });
+
   it.each([
     ["NO_REGISTERED_BUSINESS", "NONE"], ["ARTISAN_EXEMPTION", "CONSERVATIVE"], ["SOLE_PROPRIETORSHIP", "STANDARD"], ["LIMITED_OR_CORPORATION", "STANDARD"], ["OTHER_OR_UNKNOWN", "NONE"],
   ])("maps %s to a planning preset without eligibility conclusions", (type, preset) => expect(businessPresetFor(type)).toBe(preset));
