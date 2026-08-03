@@ -94,7 +94,17 @@ export async function loadOnboarding(context: WorkspaceContext) {
       otherKnownCost: convertCost(snapshot.costDefault?.exportHandlingCost ?? null),
     };
   }));
-  return { ...snapshot, completeness, firstResult, reportingCurrency, affectedProductCount: await previewBulkDefaultApplication(context) };
+  const average = (values: Decimal.Value[]) => values.length
+    ? values.reduce<Decimal>((sum, value) => sum.plus(value), new Decimal(0)).div(values.length).toDecimalPlaces(2).toString()
+    : null;
+  const customCosts = snapshot.products.flatMap((product) => product.costVersions);
+  const suggestedCosts = {
+    averageLaborHours: average(customCosts.map((cost) => cost.laborHours)),
+    hourlyLaborValue: average(customCosts.map((cost) => cost.laborHourlyRateTry)),
+    packagingCost: average(customCosts.map((cost) => cost.packagingCostTry)),
+    materialWastagePercentage: average(customCosts.map((cost) => cost.wastageRate)),
+  };
+  return { ...snapshot, completeness, firstResult, reportingCurrency, suggestedCosts, affectedProductCount: await previewBulkDefaultApplication(context) };
 }
 
 async function advance(context: WorkspaceContext, completedStep: number, data: Record<string, unknown> = {}) {

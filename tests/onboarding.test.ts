@@ -42,6 +42,7 @@ describe("Prompt 5 UI, signup, and analytics contracts", () => {
     expect(page).toContain('const steps = ["Etsy", "İşletme", "Maliyetler", "Pazar", "İlk sonuç"]');
     expect(page).toContain('aria-label="Onboarding progress"');
     expect(page).toContain("Bilmiyorum");
+    expect(page).toContain("view.suggestedCosts.averageLaborHours");
     expect(page).toContain("Panelimi aç");
     for (const forbidden of ["SGK", "vergi dairesi", "banka hesabı uygunluğu", "muafiyet koşullarının tamamı"]) expect(page).not.toContain(forbidden);
     expect(page).toContain("sm:grid-cols-2");
