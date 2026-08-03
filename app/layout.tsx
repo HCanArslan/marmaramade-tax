@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/app-shell";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { Analytics } from "@vercel/analytics/next";
 
 export const metadata: Metadata = {
   title: "MarmaraLedge",
@@ -16,6 +17,7 @@ export default function RootLayout({
       <body>
         <AppShell>{children}</AppShell>
         <SpeedInsights />
+        <Analytics />
       </body>
     </html>
   );
