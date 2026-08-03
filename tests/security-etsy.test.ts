@@ -398,16 +398,15 @@ describe("OAuth, tokens and synchronization", () => {
     ));
   it("keeps imported receipts external until confirmation", async () =>
     expect(await source("lib/etsy/sync.ts")).not.toContain("order.create"));
-  it("uses unique Etsy IDs for idempotent imports", async () => {
+  it("uses shop-scoped unique Etsy IDs for idempotent imports", async () => {
     const schema = await source("prisma/schema.prisma");
-    for (const field of [
-      "etsyListingId",
-      "etsyReceiptId",
-      "etsyPaymentId",
-      "etsyLedgerEntryId",
-      "webhookId",
-    ])
-      expect(schema).toMatch(new RegExp(`${field}\\s+String\\s+@unique`));
+    for (const constraint of [
+      "@@unique([shopId, etsyListingId])",
+      "@@unique([shopId, etsyReceiptId])",
+      "@@unique([shopId, etsyPaymentId])",
+      "@@unique([shopId, etsyLedgerEntryId])",
+      "@@unique([saasShopId, webhookId])",
+    ]) expect(schema).toContain(constraint);
   });
   it("marks changed confirmed receipts for reconciliation", async () =>
     expect(await source("lib/etsy/sync.ts")).toContain("needsReconciliation"));

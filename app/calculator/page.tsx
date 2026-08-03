@@ -234,7 +234,8 @@ export default async function CalculatorPage() {
           .plus(cost.additionalMakerPaymentTry)
           .plus(cost.allocatedEquipmentCostTry)
       : new Decimal(0);
-    return product.etsyListingLinks.map(({ listing }) => {
+    return product.etsyListingLinks.flatMap(({ listing }) => {
+      if (!listing) return [];
       const pricing = resolveListingPricing(listing);
       return {
         id: listing.etsyListingId,

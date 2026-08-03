@@ -135,7 +135,34 @@ Excluded from the new SaaS navigation, but not deleted:
 3. Do not remove a legacy allowlist entry until its caller uses a repository.
 4. Do not tenant-convert legacy domain tables until the reviewed Prompt 3
    migration; use the Prompt 2 workspace boundary for new code.
-5. Do not generalize USD/TRY formulas before the dedicated currency phase.
+5. Do not replace protected USD/TRY formulas; extend currency support through
+   the additive generic modules until a separately approved refactor.
 6. Do not expose retained private ERP routes in public or SaaS navigation.
 7. Run lint, type checking, all tests, Prisma validation, Etsy guard, build,
    and both audits after each phase.
+
+## Prompt 3 tenancy and calculation-data boundary
+
+Prompt 3 keeps the legacy ledger intact while adding the SaaS ownership layer:
+
+- Existing retained commerce records receive nullable `workspaceId` columns.
+  The `MARMARAMADE_LEDGER` assignment is the only accepted source for legacy
+  ownership; no workspace identifier is embedded in migration SQL.
+- `Shop` is the workspace-owned platform identity. Etsy imports use compound
+  shop/external-ID uniqueness and internal relation IDs, while OAuth scopes and
+  GET-only integration policy remain unchanged.
+- New server access is limited to tenant-aware repositories under
+  `lib/server/repositories/`. Every public repository read accepts trusted
+  `WorkspaceContext`, validates membership, and filters by workspace/shop.
+- `WorkspaceBusinessProfileVersion` and `WorkspaceCostDefaultVersion` are
+  effective-dated planning inputs. `activeKey` is nullable for history and
+  unique per parent when set to `ACTIVE`.
+- `PortfolioScenarioVersion` is an immutable calculation input after its status
+  becomes `CALCULATED`; recalculation creates a new version.
+- Generic Decimal money, rate, and conversion modules are additive. Protected
+  USD/TRY calculation modules and historical `...Usd` / `...Try` fields remain
+  unchanged.
+
+The Prompt 3 migration follows expand-and-contract ordering: nullable columns
+and compound indexes are added, the stable-assignment backfill runs, collision
+guards execute, and only then are obsolete global external-ID indexes removed.

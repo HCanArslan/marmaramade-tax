@@ -151,14 +151,18 @@ export default async function ProductionPage() {
               <select className="field mt-1" name="etsyListingId">
                 <option value="">Link later</option>
                 {products.flatMap((product) =>
-                  product.etsyListingLinks.map(({ listing }) => (
-                    <option
-                      value={listing.etsyListingId}
-                      key={listing.etsyListingId}
-                    >
-                      {product.sku} · #{listing.etsyListingId}
-                    </option>
-                  )),
+                  product.etsyListingLinks.flatMap(({ listing }) =>
+                    listing
+                      ? [
+                          <option
+                            value={listing.etsyListingId}
+                            key={listing.id}
+                          >
+                            {product.sku} · #{listing.etsyListingId}
+                          </option>,
+                        ]
+                      : [],
+                  ),
                 )}
               </select>
             </label>

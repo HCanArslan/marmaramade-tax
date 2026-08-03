@@ -45,8 +45,13 @@ run("npx", ["prisma", "generate"]);
 // Vercel integration credentials are intentionally unavailable for local pulls.
 // Apply committed, idempotent migrations only in the production deployment.
 if (process.env.VERCEL_ENV === "production") {
+  if (process.env.PROMPT3_PREFLIGHT_ONLY === "1") {
+    run("npm", ["run", "db:prompt3-preflight"]);
+    throw new Error("Prompt 3 preflight completed; this diagnostic deployment is intentionally stopped before migration.");
+  }
   await recoverProductLogisticsMigration();
   run("npx", ["prisma", "migrate", "deploy"]);
+  run("npm", ["run", "db:prompt3-report"]);
 }
 
 run("npx", ["next", "build"]);

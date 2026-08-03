@@ -22,6 +22,29 @@ enum WorkspaceStatus {
   SUSPENDED
 }
 
+enum ShopPlatform {
+  ETSY
+  AMAZON
+  SHOPIFY
+  EBAY
+  CSV
+}
+
+enum SaasBusinessType {
+  NO_REGISTERED_BUSINESS
+  ARTISAN_EXEMPTION
+  SOLE_PROPRIETORSHIP
+  LIMITED_OR_CORPORATION
+  OTHER_OR_UNKNOWN
+}
+
+enum TaxPlanningPreset {
+  NONE
+  CONSERVATIVE
+  STANDARD
+  CUSTOM
+}
+
 model User {
   id               String            @id @default(cuid())
   name             String
@@ -98,16 +121,77 @@ model RateLimit {
 }
 
 model Workspace {
-  id                    String                      @id @default(cuid())
+  id                    String                        @id @default(cuid())
   name                  String
-  slug                  String                      @unique
-  status                WorkspaceStatus             @default(ACTIVE)
-  createdAt             DateTime                    @default(now())
-  updatedAt             DateTime                    @updatedAt
+  slug                  String                        @unique
+  status                WorkspaceStatus               @default(ACTIVE)
+  createdAt             DateTime                      @default(now())
+  updatedAt             DateTime                      @updatedAt
   memberships           Membership[]
-  activeUserPreferences UserPreference[]            @relation("ActiveWorkspace")
+  activeUserPreferences UserPreference[]              @relation("ActiveWorkspace")
   legalAcceptances      LegalAcceptance[]
   legacyAssignments     LegacyWorkspaceAssignment[]
+  products              Product[]
+  productCostVersions   ProductCostVersion[]
+  productMaterialCosts  ProductMaterialCost[]
+  packageProfiles       PackageProfile[]
+  feeProfiles           FeeProfile[]
+  exchangeRates         ExchangeRateSnapshot[]
+  orders                Order[]
+  orderItems            OrderItem[]
+  orderCostSnapshots    OrderCostSnapshot[]
+  orderCostLines        OrderCostLine[]
+  orderAdjustments      OrderAdjustment[]
+  legacyScenarios       Scenario[]
+  shops                 Shop[]
+  etsyConnections       EtsyConnection[]
+  etsyOAuthStates       EtsyOAuthState[]
+  etsySyncRuns          EtsySyncRun[]
+  etsySyncErrors        EtsySyncError[]
+  etsyListings          EtsyListing[]
+  etsyListingImages     EtsyListingImage[]
+  etsyListingLinks      EtsyListingProductLink[]
+  etsyReceipts          EtsyReceipt[]
+  etsyReceiptItems      EtsyReceiptItem[]
+  etsyPayments          EtsyPayment[]
+  etsyLedgerEntries     EtsyLedgerEntry[]
+  etsyWebhookEvents     EtsyWebhookEvent[]
+  etsyImportMappings    EtsyImportMapping[]
+  settings              WorkspaceSetting[]
+  businessProfiles      WorkspaceBusinessProfile[]
+  costDefaultVersions   WorkspaceCostDefaultVersion[]
+  portfolioScenarios    PortfolioScenario[]
+  portfolioVersions     PortfolioScenarioVersion[]
+}
+
+model Shop {
+  id                  String                   @id @default(cuid())
+  workspaceId         String
+  platform            ShopPlatform
+  externalShopId      String?
+  name                String
+  status              String                   @default("ACTIVE")
+  defaultCurrency     String?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  workspace           Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  etsyConnection      EtsyConnection?
+  oauthStates         EtsyOAuthState[]
+  syncRuns            EtsySyncRun[]
+  syncErrors          EtsySyncError[]
+  listings            EtsyListing[]
+  listingImages       EtsyListingImage[]
+  listingProductLinks EtsyListingProductLink[]
+  receipts            EtsyReceipt[]
+  receiptItems        EtsyReceiptItem[]
+  payments            EtsyPayment[]
+  ledgerEntries       EtsyLedgerEntry[]
+  webhookEvents       EtsyWebhookEvent[]
+  importMappings      EtsyImportMapping[]
+  orders              Order[]
+
+  @@unique([workspaceId, platform, externalShopId])
+  @@index([workspaceId, platform, status])
 }
 
 model Membership {
@@ -176,7 +260,8 @@ model AuthSecurityEvent {
 
 model Product {
   id                 String                   @id @default(cuid())
-  sku                String                   @unique
+  workspaceId        String?
+  sku                String
   title              String
   material           String?
   description        String?
@@ -208,12 +293,17 @@ model Product {
   tariffVersions     TariffVersion[]
   etgbCostRecords    EtgbCostRecord[]
   microExportCases   MicroExportCase[]
+  workspace          Workspace?               @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  portfolioItems     PortfolioScenarioItem[]
 
+  @@unique([workspaceId, sku])
+  @@index([workspaceId, active])
   @@index([active])
 }
 
 model ProductCostVersion {
   id                        String                @id @default(cuid())
+  workspaceId               String?
   productId                 String
   effectiveFrom             DateTime
   effectiveTo               DateTime?
@@ -234,14 +324,17 @@ model ProductCostVersion {
   allocatedEquipmentCostTry Decimal               @default(0)
   changeReason              String?
   templateType              String?
+  workspace                 Workspace?            @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
 
   @@unique([productId, effectiveFrom])
+  @@index([workspaceId, effectiveFrom, effectiveTo])
   @@index([productId, effectiveFrom, effectiveTo])
 }
 
 model PackageProfile {
   id                String                        @id @default(cuid())
-  name              String                        @unique
+  workspaceId       String?
+  name              String
   lengthCm          Decimal
   widthCm           Decimal
   heightCm          Decimal
@@ -253,6 +346,10 @@ model PackageProfile {
   updatedAt         DateTime                      @updatedAt
   shipEntegraQuotes ShipEntegraQuote[]
   shipmentSnapshots ShipEntegraShipmentSnapshot[]
+  workspace         Workspace?                    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
 }
 
 model Marketplace {
@@ -263,23 +360,27 @@ model Marketplace {
 }
 
 model FeeProfile {
-  id              String              @id @default(cuid())
-  marketplace     String
-  name            String
-  country         String
-  effectiveFrom   DateTime
-  effectiveTo     DateTime?
-  listingCurrency String
-  payoutCurrency  String
-  notes           String?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  rules           FeeRule[]
-  orders          Order[]
-  snapshots       OrderCostSnapshot[]
-  goalVersions    ProfitGoalVersion[]
+  id                String                     @id @default(cuid())
+  workspaceId       String?
+  marketplace       String
+  name              String
+  country           String
+  effectiveFrom     DateTime
+  effectiveTo       DateTime?
+  listingCurrency   String
+  payoutCurrency    String
+  notes             String?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+  rules             FeeRule[]
+  orders            Order[]
+  snapshots         OrderCostSnapshot[]
+  goalVersions      ProfitGoalVersion[]
+  workspace         Workspace?                 @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  portfolioVersions PortfolioScenarioVersion[]
 
-  @@unique([marketplace, country, effectiveFrom])
+  @@unique([workspaceId, marketplace, country, effectiveFrom])
+  @@index([workspaceId, effectiveFrom, effectiveTo])
   @@index([effectiveFrom, effectiveTo])
 }
 
@@ -429,24 +530,30 @@ model CustomsQuote {
 }
 
 model ExchangeRateSnapshot {
-  id            String              @id @default(cuid())
-  baseCurrency  String
-  quoteCurrency String
-  rate          Decimal
-  source        String
-  capturedAt    DateTime
-  createdAt     DateTime            @default(now())
-  orders        Order[]
-  snapshots     OrderCostSnapshot[]
-  goalVersions  ProfitGoalVersion[]
+  id                String                     @id @default(cuid())
+  workspaceId       String?
+  baseCurrency      String
+  quoteCurrency     String
+  rate              Decimal
+  source            String
+  capturedAt        DateTime
+  createdAt         DateTime                   @default(now())
+  orders            Order[]
+  snapshots         OrderCostSnapshot[]
+  goalVersions      ProfitGoalVersion[]
+  workspace         Workspace?                 @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  portfolioVersions PortfolioScenarioVersion[]
 
-  @@unique([baseCurrency, quoteCurrency, capturedAt])
+  @@unique([workspaceId, baseCurrency, quoteCurrency, capturedAt])
+  @@index([workspaceId, capturedAt])
   @@index([capturedAt])
 }
 
 model Order {
   id                         String                    @id @default(cuid())
-  orderNumber                String                    @unique
+  workspaceId                String?
+  shopId                     String?
+  orderNumber                String
   orderDate                  DateTime
   marketplace                String
   destinationCountry         String
@@ -485,13 +592,19 @@ model Order {
   shipEntegraShipment        ShipEntegraShipment?
   shipmentConfirmations      ShipEntegraConfirmation[]
   shippingAdjustments        ShippingCostAdjustment[]
+  workspace                  Workspace?                @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  shop                       Shop?                     @relation(fields: [shopId], references: [id], onDelete: Restrict)
 
+  @@unique([workspaceId, orderNumber])
+  @@index([workspaceId, orderDate])
+  @@index([shopId, orderDate])
   @@index([orderDate])
   @@index([destinationCountry])
 }
 
 model OrderItem {
   id                        String             @id @default(cuid())
+  workspaceId               String?
   orderId                   String
   productId                 String
   quantity                  Int
@@ -507,12 +620,15 @@ model OrderItem {
   order                     Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product                   Product            @relation(fields: [productId], references: [id])
   productCostVersion        ProductCostVersion @relation(fields: [productCostVersionId], references: [id])
+  workspace                 Workspace?         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
 
+  @@index([workspaceId, orderId])
   @@index([orderId])
 }
 
 model OrderCostSnapshot {
   id                       String                 @id @default(cuid())
+  workspaceId              String?
   orderId                  String
   businessProfileVersionId String
   feeProfileId             String
@@ -530,12 +646,15 @@ model OrderCostSnapshot {
   exchangeRateSnapshot     ExchangeRateSnapshot   @relation(fields: [exchangeRateSnapshotId], references: [id])
   lines                    OrderCostLine[]
   adjustments              OrderAdjustment[]
+  workspace                Workspace?             @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
 
+  @@index([workspaceId, orderId, calculatedAt])
   @@index([orderId, calculatedAt])
 }
 
 model OrderCostLine {
   id                    String            @id @default(cuid())
+  workspaceId           String?
   orderCostSnapshotId   String
   formulaName           String
   category              String
@@ -552,17 +671,23 @@ model OrderCostLine {
   metadataJson          String?
   createdAt             DateTime          @default(now())
   snapshot              OrderCostSnapshot @relation(fields: [orderCostSnapshotId], references: [id], onDelete: Restrict)
+  workspace             Workspace?        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
 
+  @@index([workspaceId, orderCostSnapshotId])
   @@index([orderCostSnapshotId, category])
 }
 
 model Scenario {
-  id         String           @id @default(cuid())
-  name       String
-  inputsJson String
-  createdAt  DateTime         @default(now())
-  updatedAt  DateTime         @updatedAt
-  results    ScenarioResult[]
+  id          String           @id @default(cuid())
+  workspaceId String?
+  name        String
+  inputsJson  String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  results     ScenarioResult[]
+  workspace   Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, createdAt])
 }
 
 model ScenarioResult {
@@ -577,6 +702,193 @@ model ScenarioResult {
   calculationSnapshotJson String
   createdAt               DateTime @default(now())
   scenario                Scenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+}
+
+model WorkspaceSetting {
+  id          String    @id @default(cuid())
+  workspaceId String
+  key         String
+  value       Json
+  valueType   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, key])
+  @@index([workspaceId, updatedAt])
+}
+
+model WorkspaceBusinessProfile {
+  id          String                            @id @default(cuid())
+  workspaceId String                            @unique
+  createdAt   DateTime                          @default(now())
+  updatedAt   DateTime                          @updatedAt
+  workspace   Workspace                         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  versions    WorkspaceBusinessProfileVersion[]
+}
+
+model WorkspaceBusinessProfileVersion {
+  id                         String                     @id @default(cuid())
+  workspaceBusinessProfileId String
+  versionNumber              Int
+  effectiveFrom              DateTime
+  effectiveTo                DateTime?
+  activeKey                  String?
+  sellerCountry              String
+  reportingCurrency          String
+  businessType               SaasBusinessType
+  defaultMarketplaceCurrency String
+  taxPlanningPreset          TaxPlanningPreset?
+  notes                      String?
+  createdAt                  DateTime                   @default(now())
+  profile                    WorkspaceBusinessProfile   @relation(fields: [workspaceBusinessProfileId], references: [id], onDelete: Cascade)
+  portfolioVersions          PortfolioScenarioVersion[]
+
+  @@unique([workspaceBusinessProfileId, versionNumber], map: "WorkspaceBusinessProfileVersion_profile_version_key")
+  @@unique([workspaceBusinessProfileId, effectiveFrom], map: "WorkspaceBusinessProfileVersion_profile_effective_key")
+  @@unique([workspaceBusinessProfileId, activeKey], map: "WorkspaceBusinessProfileVersion_one_active_key")
+  @@index([workspaceBusinessProfileId, effectiveFrom, effectiveTo])
+}
+
+model WorkspaceCostDefaultVersion {
+  id                        String                     @id @default(cuid())
+  workspaceId               String
+  versionNumber             Int
+  effectiveFrom             DateTime
+  effectiveTo               DateTime?
+  activeKey                 String?
+  hourlyLabourValue         Decimal                    @default(0)
+  packagingCost             Decimal                    @default(0)
+  materialWastagePercentage Decimal                    @default(0)
+  returnReservePercentage   Decimal                    @default(0)
+  damageReservePercentage   Decimal                    @default(0)
+  fxLossReservePercentage   Decimal                    @default(0)
+  monthlyOverhead           Decimal                    @default(0)
+  exportHandlingCost        Decimal                    @default(0)
+  costCurrency              String
+  sellerCountry             String
+  originCountry             String
+  reportingCurrency         String
+  targetMarket              String
+  createdAt                 DateTime                   @default(now())
+  workspace                 Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  portfolioVersions         PortfolioScenarioVersion[]
+
+  @@unique([workspaceId, versionNumber])
+  @@unique([workspaceId, effectiveFrom])
+  @@unique([workspaceId, activeKey], map: "WorkspaceCostDefaultVersion_one_active_key")
+  @@index([workspaceId, effectiveFrom, effectiveTo])
+}
+
+model PortfolioScenario {
+  id          String                     @id @default(cuid())
+  workspaceId String
+  name        String
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
+  workspace   Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  versions    PortfolioScenarioVersion[]
+
+  @@index([workspaceId, createdAt])
+}
+
+model PortfolioScenarioVersion {
+  id                       String                           @id @default(cuid())
+  workspaceId              String
+  scenarioId               String
+  versionNumber            Int
+  status                   String                           @default("DRAFT")
+  targetDestinationCountry String
+  customsPayer             String
+  shippingMode             String
+  packageAssumptions       Json
+  reportingCurrency        String
+  exchangeRateSnapshotId   String?
+  feeProfileId             String?
+  businessProfileVersionId String?
+  costDefaultVersionId     String?
+  warnings                 Json
+  calculatedAt             DateTime?
+  createdAt                DateTime                         @default(now())
+  scenario                 PortfolioScenario                @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  workspace                Workspace                        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  exchangeRateSnapshot     ExchangeRateSnapshot?            @relation(fields: [exchangeRateSnapshotId], references: [id], onDelete: Restrict)
+  feeProfile               FeeProfile?                      @relation(fields: [feeProfileId], references: [id], onDelete: Restrict)
+  businessProfileVersion   WorkspaceBusinessProfileVersion? @relation(fields: [businessProfileVersionId], references: [id], onDelete: Restrict)
+  costDefaultVersion       WorkspaceCostDefaultVersion?     @relation(fields: [costDefaultVersionId], references: [id], onDelete: Restrict)
+  items                    PortfolioScenarioItem[]
+  assumptions              PortfolioScenarioAssumption[]
+  result                   PortfolioScenarioResult?
+
+  @@unique([scenarioId, versionNumber])
+  @@index([workspaceId, createdAt])
+}
+
+model PortfolioScenarioItem {
+  id                    String                        @id @default(cuid())
+  scenarioVersionId     String
+  productId             String
+  quantity              Int
+  priceOverrideAmount   Decimal?
+  priceOverrideCurrency String?
+  packageAssumption     Json?
+  createdAt             DateTime                      @default(now())
+  scenarioVersion       PortfolioScenarioVersion      @relation(fields: [scenarioVersionId], references: [id], onDelete: Cascade)
+  product               Product                       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  resultLines           PortfolioScenarioResultLine[]
+
+  @@unique([scenarioVersionId, productId])
+  @@index([productId])
+}
+
+model PortfolioScenarioAssumption {
+  id                String                   @id @default(cuid())
+  scenarioVersionId String
+  key               String
+  value             Json
+  source            String
+  createdAt         DateTime                 @default(now())
+  scenarioVersion   PortfolioScenarioVersion @relation(fields: [scenarioVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([scenarioVersionId, key])
+}
+
+model PortfolioScenarioResult {
+  id                      String                        @id @default(cuid())
+  scenarioVersionId       String                        @unique
+  originalAmount          Decimal
+  originalCurrency        String
+  reportingAmount         Decimal
+  reportingCurrency       String
+  totalRevenueReporting   Decimal
+  totalCostReporting      Decimal
+  totalNetProfitReporting Decimal
+  warnings                Json
+  calculationSnapshot     Json
+  createdAt               DateTime                      @default(now())
+  scenarioVersion         PortfolioScenarioVersion      @relation(fields: [scenarioVersionId], references: [id], onDelete: Restrict)
+  lines                   PortfolioScenarioResultLine[]
+}
+
+model PortfolioScenarioResultLine {
+  id                String                  @id @default(cuid())
+  scenarioResultId  String
+  scenarioItemId    String?
+  category          String
+  label             String
+  source            String
+  nativeAmount      Decimal
+  nativeCurrency    String
+  reportingAmount   Decimal
+  reportingCurrency String
+  exchangeRateUsed  Decimal?
+  metadata          Json?
+  createdAt         DateTime                @default(now())
+  result            PortfolioScenarioResult @relation(fields: [scenarioResultId], references: [id], onDelete: Restrict)
+  scenarioItem      PortfolioScenarioItem?  @relation(fields: [scenarioItemId], references: [id], onDelete: Restrict)
+
+  @@index([scenarioResultId, category])
+  @@index([scenarioItemId])
 }
 
 model MonthlyOverhead {
@@ -780,6 +1092,8 @@ model AdminSecurityEvent {
 
 model EtsyConnection {
   id                      String            @id @default(cuid())
+  workspaceId             String?
+  saasShopId              String?           @unique
   shopId                  String            @unique
   etsyUserId              String
   shopName                String?
@@ -803,24 +1117,35 @@ model EtsyConnection {
   receipts                EtsyReceipt[]
   payments                EtsyPayment[]
   ledgerEntries           EtsyLedgerEntry[]
+  workspace               Workspace?        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  saasShop                Shop?             @relation(fields: [saasShopId], references: [id], onDelete: Restrict)
 
+  @@index([workspaceId, status])
   @@index([status])
 }
 
 model EtsyOAuthState {
-  id          String    @id @default(cuid())
-  stateHash   String    @unique
+  id          String     @id @default(cuid())
+  workspaceId String?
+  shopId      String?
+  stateHash   String     @unique
   verifier    String
   redirectUri String
   expiresAt   DateTime
   consumedAt  DateTime?
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime   @default(now())
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  shop        Shop?      @relation(fields: [shopId], references: [id], onDelete: Restrict)
 
+  @@index([workspaceId, expiresAt, consumedAt])
+  @@index([shopId])
   @@index([expiresAt, consumedAt])
 }
 
 model EtsySyncRun {
   id                    String            @id @default(cuid())
+  workspaceId           String?
+  shopId                String?
   connectionId          String
   syncType              String
   status                String            @default("RUNNING")
@@ -841,30 +1166,42 @@ model EtsySyncRun {
   receipts              EtsyReceipt[]
   payments              EtsyPayment[]
   ledgerEntries         EtsyLedgerEntry[]
+  workspace             Workspace?        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  shop                  Shop?             @relation(fields: [shopId], references: [id], onDelete: Restrict)
 
+  @@index([workspaceId, startedAt])
+  @@index([shopId, startedAt])
   @@index([connectionId, startedAt])
   @@index([status])
 }
 
 model EtsySyncError {
-  id         String      @id @default(cuid())
-  syncRunId  String
-  resource   String
-  externalId String?
-  code       String
-  message    String
-  retryable  Boolean     @default(false)
-  createdAt  DateTime    @default(now())
-  syncRun    EtsySyncRun @relation(fields: [syncRunId], references: [id], onDelete: Cascade)
+  id          String      @id @default(cuid())
+  workspaceId String?
+  shopId      String?
+  syncRunId   String
+  resource    String
+  externalId  String?
+  code        String
+  message     String
+  retryable   Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  syncRun     EtsySyncRun @relation(fields: [syncRunId], references: [id], onDelete: Cascade)
+  workspace   Workspace?  @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  shop        Shop?       @relation(fields: [shopId], references: [id], onDelete: Restrict)
 
+  @@index([workspaceId, createdAt])
+  @@index([shopId, createdAt])
   @@index([syncRunId, createdAt])
 }
 
 model EtsyListing {
   id                       String                  @id @default(cuid())
+  workspaceId              String?
+  shopId                   String?
   connectionId             String
   syncRunId                String?
-  etsyListingId            String                  @unique
+  etsyListingId            String
   sku                      String?
   title                    String
   description              String?
@@ -917,45 +1254,66 @@ model EtsyListing {
   images                   EtsyListingImage[]
   productLink              EtsyListingProductLink?
   receiptItems             EtsyReceiptItem[]
+  workspace                Workspace?              @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  shop                     Shop?                   @relation(fields: [shopId], references: [id], onDelete: Restrict)
 
+  @@unique([shopId, etsyListingId])
+  @@index([workspaceId, state])
+  @@index([shopId, state])
   @@index([connectionId, state])
   @@index([sku])
 }
 
 model EtsyListingImage {
-  id              String      @id @default(cuid())
-  etsyImageId     String      @unique
+  id              String       @id @default(cuid())
+  workspaceId     String?
+  shopId          String?
+  listingId       String?
+  etsyImageId     String
   etsyListingId   String
   rank            Int
   urlFull         String
   urlThumbnail    String?
   sourceUpdatedAt DateTime?
-  firstImportedAt DateTime    @default(now())
-  lastImportedAt  DateTime    @default(now())
-  listing         EtsyListing @relation(fields: [etsyListingId], references: [etsyListingId], onDelete: Cascade)
+  firstImportedAt DateTime     @default(now())
+  lastImportedAt  DateTime     @default(now())
+  listing         EtsyListing? @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  workspace       Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  shop            Shop?        @relation(fields: [shopId], references: [id], onDelete: Restrict)
 
+  @@unique([shopId, etsyImageId])
+  @@index([listingId, rank])
   @@index([etsyListingId, rank])
 }
 
 model EtsyListingProductLink {
-  id            String      @id @default(cuid())
-  etsyListingId String      @unique
+  id            String       @id @default(cuid())
+  workspaceId   String?
+  shopId        String?
+  listingId     String?      @unique
+  etsyListingId String
   productId     String
-  skuConflict   Boolean     @default(false)
-  confirmedAt   DateTime    @default(now())
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  listing       EtsyListing @relation(fields: [etsyListingId], references: [etsyListingId], onDelete: Cascade)
-  product       Product     @relation(fields: [productId], references: [id], onDelete: Restrict)
+  skuConflict   Boolean      @default(false)
+  confirmedAt   DateTime     @default(now())
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  listing       EtsyListing? @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  product       Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  workspace     Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  shop          Shop?        @relation(fields: [shopId], references: [id], onDelete: Restrict)
 
+  @@unique([shopId, etsyListingId])
+  @@index([workspaceId])
   @@index([productId])
 }
 
 model EtsyReceipt {
   id                  String            @id @default(cuid())
+  workspaceId         String?
+  shopId              String?
   connectionId        String
   syncRunId           String?
-  etsyReceiptId       String            @unique
+  etsyReceiptId       String
   localOrderId        String?
   sourceCreatedAt     DateTime
   sourceUpdatedAt     DateTime?
@@ -986,14 +1344,22 @@ model EtsyReceipt {
   syncRun             EtsySyncRun?      @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
   items               EtsyReceiptItem[]
   payments            EtsyPayment[]
+  workspace           Workspace?        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  shop                Shop?             @relation(fields: [shopId], references: [id], onDelete: Restrict)
 
+  @@unique([shopId, etsyReceiptId])
+  @@index([workspaceId, sourceCreatedAt])
   @@index([connectionId, sourceCreatedAt])
   @@index([localOrderId])
 }
 
 model EtsyReceiptItem {
   id                String       @id @default(cuid())
-  etsyTransactionId String       @unique
+  workspaceId       String?
+  shopId            String?
+  receiptRecordId   String?
+  listingRecordId   String?
+  etsyTransactionId String
   etsyReceiptId     String
   etsyListingId     String?
   title             String
@@ -1004,18 +1370,26 @@ model EtsyReceiptItem {
   sourceCreatedAt   DateTime?
   firstImportedAt   DateTime     @default(now())
   lastImportedAt    DateTime     @default(now())
-  receipt           EtsyReceipt  @relation(fields: [etsyReceiptId], references: [etsyReceiptId], onDelete: Cascade)
-  listing           EtsyListing? @relation(fields: [etsyListingId], references: [etsyListingId], onDelete: SetNull)
+  receipt           EtsyReceipt? @relation(fields: [receiptRecordId], references: [id], onDelete: Cascade)
+  listing           EtsyListing? @relation(fields: [listingRecordId], references: [id], onDelete: SetNull)
+  workspace         Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  shop              Shop?        @relation(fields: [shopId], references: [id], onDelete: Restrict)
 
+  @@unique([shopId, etsyTransactionId])
+  @@index([receiptRecordId])
+  @@index([listingRecordId])
   @@index([etsyReceiptId])
   @@index([etsyListingId])
 }
 
 model EtsyPayment {
   id              String         @id @default(cuid())
+  workspaceId     String?
+  shopId          String?
+  receiptRecordId String?
   connectionId    String
   syncRunId       String?
-  etsyPaymentId   String         @unique
+  etsyPaymentId   String
   etsyReceiptId   String?
   amount          Decimal
   adjustedAmount  Decimal
@@ -1035,17 +1409,24 @@ model EtsyPayment {
   updatedAt       DateTime       @updatedAt
   connection      EtsyConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   syncRun         EtsySyncRun?   @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
-  receipt         EtsyReceipt?   @relation(fields: [etsyReceiptId], references: [etsyReceiptId], onDelete: SetNull)
+  receipt         EtsyReceipt?   @relation(fields: [receiptRecordId], references: [id], onDelete: SetNull)
+  workspace       Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  shop            Shop?          @relation(fields: [shopId], references: [id], onDelete: Restrict)
 
+  @@unique([shopId, etsyPaymentId])
+  @@index([receiptRecordId])
+  @@index([workspaceId, paidAt])
   @@index([connectionId, paidAt])
   @@index([etsyReceiptId])
 }
 
 model EtsyLedgerEntry {
   id                  String         @id @default(cuid())
+  workspaceId         String?
+  shopId              String?
   connectionId        String
   syncRunId           String?
-  etsyLedgerEntryId   String         @unique
+  etsyLedgerEntryId   String
   etsyLedgerId        String?
   entryType           String
   originalDescription String?
@@ -1066,39 +1447,57 @@ model EtsyLedgerEntry {
   updatedAt           DateTime       @updatedAt
   connection          EtsyConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   syncRun             EtsySyncRun?   @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
+  workspace           Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  shop                Shop?          @relation(fields: [shopId], references: [id], onDelete: Restrict)
 
+  @@unique([shopId, etsyLedgerEntryId])
+  @@index([workspaceId, sourceCreatedAt])
+  @@index([shopId, sourceCreatedAt])
   @@index([connectionId, sourceCreatedAt])
   @@index([mappedCategory, manualReview])
 }
 
 model EtsyWebhookEvent {
-  id               String    @id @default(cuid())
-  webhookId        String    @unique
+  id               String     @id @default(cuid())
+  workspaceId      String?
+  saasShopId       String?
+  webhookId        String
   eventType        String
   shopId           String
   resourceUrl      String
   payloadHash      String
   webhookTimestamp DateTime
   processedAt      DateTime?
-  status           String    @default("VERIFIED")
-  createdAt        DateTime  @default(now())
+  status           String     @default("VERIFIED")
+  createdAt        DateTime   @default(now())
+  workspace        Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  saasShop         Shop?      @relation(fields: [saasShopId], references: [id], onDelete: Restrict)
 
+  @@unique([saasShopId, webhookId])
+  @@index([workspaceId, createdAt])
+  @@index([saasShopId, createdAt])
   @@index([shopId, createdAt])
 }
 
 model EtsyImportMapping {
-  id                  String   @id @default(cuid())
+  id                  String     @id @default(cuid())
+  workspaceId         String?
+  shopId              String?
   originalType        String
   originalDescription String?
   mappedCategory      String
   confidence          Decimal
-  approved            Boolean  @default(false)
-  unrelated           Boolean  @default(false)
+  approved            Boolean    @default(false)
+  unrelated           Boolean    @default(false)
   notes               String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  workspace           Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  shop                Shop?      @relation(fields: [shopId], references: [id], onDelete: Restrict)
 
-  @@unique([originalType, originalDescription])
+  @@unique([shopId, originalType, originalDescription])
+  @@index([workspaceId])
+  @@index([shopId])
 }
 
 enum OperatingMode {
@@ -1394,6 +1793,7 @@ model OrderDocumentChecklistItem {
 
 model ProductMaterialCost {
   id                   String              @id @default(cuid())
+  workspaceId          String?
   productId            String
   productCostVersionId String?
   componentType        String
@@ -1405,13 +1805,16 @@ model ProductMaterialCost {
   updatedAt            DateTime            @updatedAt
   product              Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
   productCostVersion   ProductCostVersion? @relation(fields: [productCostVersionId], references: [id], onDelete: Cascade)
+  workspace            Workspace?          @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
 
+  @@index([workspaceId, productId])
   @@index([productId, componentType])
   @@index([productCostVersionId])
 }
 
 model OrderAdjustment {
   id           String             @id @default(cuid())
+  workspaceId  String?
   orderId      String
   snapshotId   String?
   category     String
@@ -1425,7 +1828,9 @@ model OrderAdjustment {
   createdAt    DateTime           @default(now())
   order        Order              @relation(fields: [orderId], references: [id], onDelete: Restrict)
   snapshot     OrderCostSnapshot? @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  workspace    Workspace?         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
 
+  @@index([workspaceId, orderId])
   @@index([orderId, createdAt])
 }
 
@@ -2421,6 +2826,7 @@ model TaxRuleVersion {
   updatedAt           DateTime           @updatedAt
 
   @@index([taxType, effectiveFrom, effectiveTo])
+  @@index([purpose, isPlanningDefault, effectiveFrom])
 }
 
 model TaxObligation {

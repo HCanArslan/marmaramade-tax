@@ -14,7 +14,9 @@ export function tokenNeedsRefresh(expiresAt: Date, now = Date.now()) { return ex
 
 export async function beginEtsyOAuth() {
   const env = requireEtsySecrets(); const state = createOAuthState(); const { verifier, challenge } = createPkcePair();
-  await prisma.etsyOAuthState.create({ data: { stateHash: hashOAuthState(state), verifier: encryptToken(verifier, env.TOKEN_ENCRYPTION_KEY), redirectUri: env.ETSY_REDIRECT_URI, expiresAt: new Date(Date.now() + 10 * 60_000) } });
+  const assignment = await prisma.legacyWorkspaceAssignment.findUnique({ where: { sourceKey: "MARMARAMADE_LEDGER" } });
+  if (!assignment) throw new Error("Legacy workspace assignment is unavailable.");
+  await prisma.etsyOAuthState.create({ data: { workspaceId: assignment.workspaceId, stateHash: hashOAuthState(state), verifier: encryptToken(verifier, env.TOKEN_ENCRYPTION_KEY), redirectUri: env.ETSY_REDIRECT_URI, expiresAt: new Date(Date.now() + 10 * 60_000) } });
   const url = new URL("https://www.etsy.com/oauth/connect");
   url.search = new URLSearchParams({ response_type: "code", client_id: env.ETSY_API_KEYSTRING, redirect_uri: env.ETSY_REDIRECT_URI, scope: getConfiguredScopes().join(" "), state, code_challenge: challenge, code_challenge_method: "S256" }).toString();
   return url;
@@ -27,7 +29,7 @@ export async function consumeOAuthState(state: string) {
     assertUsableOAuthState(record, now);
     const claimed = await tx.etsyOAuthState.updateMany({ where: { id: record.id, consumedAt: null, expiresAt: { gt: now } }, data: { consumedAt: now } });
     if (claimed.count !== 1) throw new Error("OAuth state has already been used.");
-    return { verifier: decryptToken(record.verifier, env.TOKEN_ENCRYPTION_KEY), redirectUri: record.redirectUri };
+    return { verifier: decryptToken(record.verifier, env.TOKEN_ENCRYPTION_KEY), redirectUri: record.redirectUri, workspaceId: record.workspaceId };
   });
 }
 
@@ -39,10 +41,14 @@ export async function completeEtsyOAuth(code: string, state: string) {
   const shopResponse = await etsyGet<{ results?: Array<{ shop_id: number; shop_name?: string }>; shop_id?: number; shop_name?: string }>(`users/${etsyUserId}/shops`, { accessToken: tokens.access_token, apiKeyString: env.ETSY_API_KEYSTRING, sharedSecret: env.ETSY_SHARED_SECRET });
   const shop = shopResponse.data.results?.[0] || shopResponse.data;
   if (!shop.shop_id) throw new Error("No Etsy shop was found for this account.");
+  if (!pending.workspaceId) throw new Error("OAuth state is not assigned to a workspace.");
+  const workspaceId = pending.workspaceId;
   const scopes = getConfiguredScopes().join(" ");
   return prisma.$transaction(async (tx) => {
-    await tx.etsyConnection.updateMany({ where: { status: "ACTIVE" }, data: { status: "DISCONNECTED", disconnectedAt: new Date() } });
-    return tx.etsyConnection.upsert({ where: { shopId: String(shop.shop_id) }, update: { etsyUserId, shopName: shop.shop_name, encryptedAccessToken: encryptToken(tokens.access_token, env.TOKEN_ENCRYPTION_KEY), encryptedRefreshToken: encryptToken(tokens.refresh_token, env.TOKEN_ENCRYPTION_KEY), accessTokenExpiresAt: new Date(Date.now() + tokens.expires_in * 1000), scopes, status: "ACTIVE", disconnectedAt: null, connectedAt: new Date() }, create: { shopId: String(shop.shop_id), etsyUserId, shopName: shop.shop_name, encryptedAccessToken: encryptToken(tokens.access_token, env.TOKEN_ENCRYPTION_KEY), encryptedRefreshToken: encryptToken(tokens.refresh_token, env.TOKEN_ENCRYPTION_KEY), accessTokenExpiresAt: new Date(Date.now() + tokens.expires_in * 1000), scopes } });
+    const saasShop = await tx.shop.upsert({ where: { workspaceId_platform_externalShopId: { workspaceId, platform: "ETSY", externalShopId: String(shop.shop_id) } }, update: { name: shop.shop_name || "Etsy shop", status: "ACTIVE" }, create: { workspaceId, platform: "ETSY", externalShopId: String(shop.shop_id), name: shop.shop_name || "Etsy shop" } });
+    await tx.etsyOAuthState.update({ where: { stateHash: hashOAuthState(state) }, data: { shopId: saasShop.id } });
+    await tx.etsyConnection.updateMany({ where: { workspaceId, status: "ACTIVE" }, data: { status: "DISCONNECTED", disconnectedAt: new Date() } });
+    return tx.etsyConnection.upsert({ where: { shopId: String(shop.shop_id) }, update: { workspaceId, saasShopId: saasShop.id, etsyUserId, shopName: shop.shop_name, encryptedAccessToken: encryptToken(tokens.access_token, env.TOKEN_ENCRYPTION_KEY), encryptedRefreshToken: encryptToken(tokens.refresh_token, env.TOKEN_ENCRYPTION_KEY), accessTokenExpiresAt: new Date(Date.now() + tokens.expires_in * 1000), scopes, status: "ACTIVE", disconnectedAt: null, connectedAt: new Date() }, create: { workspaceId, saasShopId: saasShop.id, shopId: String(shop.shop_id), etsyUserId, shopName: shop.shop_name, encryptedAccessToken: encryptToken(tokens.access_token, env.TOKEN_ENCRYPTION_KEY), encryptedRefreshToken: encryptToken(tokens.refresh_token, env.TOKEN_ENCRYPTION_KEY), accessTokenExpiresAt: new Date(Date.now() + tokens.expires_in * 1000), scopes } });
   });
 }
 

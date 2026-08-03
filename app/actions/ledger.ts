@@ -1311,13 +1311,11 @@ export async function createFeeProfileAction(formData: FormData) {
 export async function createOfficialEtsyTurkeyFeeProfileAction() {
   const actor = await adminActor("/fees");
   const effectiveFrom = new Date("2026-01-01T00:00:00.000Z");
-  const existing = await prisma.feeProfile.findUnique({
+  const existing = await prisma.feeProfile.findFirst({
     where: {
-      marketplace_country_effectiveFrom: {
-        marketplace: "Etsy",
-        country: "TR",
-        effectiveFrom,
-      },
+      marketplace: "Etsy",
+      country: "TR",
+      effectiveFrom,
     },
   });
   if (existing) redirect(`/fees?created=${existing.id}`);

@@ -26,9 +26,9 @@ export default async function InventoryPage() {
   ]);
 
   const activeListings = products.flatMap((product) =>
-    product.etsyListingLinks
-      .map((link) => link.listing)
-      .filter((listing) => listing.state === "active"),
+    product.etsyListingLinks.flatMap(({ listing }) =>
+      listing?.state === "active" ? [listing] : [],
+    ),
   );
   const etsyQuantity = activeListings.reduce(
     (sum, listing) => sum + listing.quantity,
@@ -114,9 +114,9 @@ export default async function InventoryPage() {
           </thead>
           <tbody>
             {products.map((product) => {
-              const listings = product.etsyListingLinks.map(
-                (link) => link.listing,
-              );
+              const listings = product.etsyListingLinks
+                .map((link) => link.listing)
+                .filter((listing) => listing !== null);
               const active = listings.filter(
                 (listing) => listing.state === "active",
               );

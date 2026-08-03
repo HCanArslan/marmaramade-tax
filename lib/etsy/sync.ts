@@ -24,9 +24,10 @@ const decimal = (value?: number | null) => value == null ? null : new Prisma.Dec
 
 export async function syncEtsy(type: EtsySyncType) {
   const connection = await getActiveConnection(); if (!connection) throw new Error("Etsy is not connected.");
+  if (!connection.workspaceId || !connection.saasShopId) throw new Error("Etsy connection is not assigned to a workspace shop.");
   const scopes = connection.scopes.split(/\s+/); try { assertReadOnlyEtsyScopes(scopes); } catch { await prisma.etsyConnection.update({ where: { id: connection.id }, data: { status: "SCOPE_VIOLATION" } }); throw new Error("Etsy synchronization disabled because an unapproved scope was detected."); }
   const env = requireEtsySecrets(); const accessToken = await getValidAccessToken(connection.id);
-  const run = await prisma.etsySyncRun.create({ data: { connectionId: connection.id, syncType: type } });
+  const run = await prisma.etsySyncRun.create({ data: { connectionId: connection.id, workspaceId: connection.workspaceId, shopId: connection.saasShopId, syncType: type } });
   const get = async <T>(path: string) => withEtsyRetry(async () => (await etsyGet<T>(path, { accessToken, apiKeyString: env.ETSY_API_KEYSTRING, sharedSecret: env.ETSY_SHARED_SECRET })).data);
   try {
     const wantsListings = ["INITIAL_FULL","INCREMENTAL","LISTINGS_ONLY"].includes(type);
@@ -35,9 +36,9 @@ export async function syncEtsy(type: EtsySyncType) {
     const shop = etsyShopSchema.parse(await get(EtsyEndpoints.shop(connection.shopId)));
     await prisma.etsyConnection.update({ where: { id: connection.id }, data: { shopName: shop.shop_name, shopTitle: shop.title, shopCurrency: shop.currency_code, shopUrl: shop.url, lastSuccessfulApiCallAt: new Date() } });
     let recoverableErrors = 0;
-    if (wantsListings) recoverableErrors += await importListings(connection.id, run.id, connection.shopId, get);
-    if (wantsOrders) await importReceipts(connection.id, run.id, connection.shopId, get);
-    if (wantsLedger) await importLedgerAndPayments(connection.id, run.id, connection.shopId, shop.create_date, get);
+    if (wantsListings) recoverableErrors += await importListings(connection.id, run.id, connection.shopId, connection.saasShopId, connection.workspaceId, get);
+    if (wantsOrders) await importReceipts(connection.id, run.id, connection.shopId, connection.saasShopId, connection.workspaceId, get);
+    if (wantsLedger) await importLedgerAndPayments(connection.id, run.id, connection.shopId, connection.saasShopId, connection.workspaceId, shop.create_date, get);
     const status = recoverableErrors ? "PARTIAL" : "SUCCEEDED";
     const counts = await prisma.etsySyncRun.update({ where: { id: run.id }, data: { status, completedAt: new Date() } });
     if (!recoverableErrors) await prisma.etsyConnection.update({ where: { id: connection.id }, data: { lastSuccessfulSyncAt: new Date() } });
@@ -50,13 +51,13 @@ export async function syncEtsy(type: EtsySyncType) {
   }
 }
 
-async function importListings(connectionId: string, syncRunId: string, shopId: string, get: <T>(path: string) => Promise<T>) {
+async function importListings(connectionId: string, syncRunId: string, externalShopId: string, shopId: string, workspaceId: string, get: <T>(path: string) => Promise<T>) {
   const schema = paginatedSchema(etsyListingSchema);
   const listings: EtsyListingPayload[] = [];
   let recoverableErrors = 0;
   for (const state of ETSY_LISTING_STATES) {
     try {
-      const pages = await collectOffsetPages(async (offset, limit) => schema.parse(await get(EtsyEndpoints.listings(shopId, state, offset, limit))));
+      const pages = await collectOffsetPages(async (offset, limit) => schema.parse(await get(EtsyEndpoints.listings(externalShopId, state, offset, limit))));
       listings.push(...pages.results);
     } catch (error) {
       if (!(error instanceof EtsyApiError)) throw error;
@@ -65,7 +66,7 @@ async function importListings(connectionId: string, syncRunId: string, shopId: s
     }
   }
   for (const listing of listings) {
-    const sourceHash = hash(listing); const existing = await prisma.etsyListing.findUnique({ where: { etsyListingId: String(listing.listing_id) }, select: { sourceHash: true } });
+    const sourceHash = hash(listing); const externalListingId = String(listing.listing_id); const existing = await prisma.etsyListing.findUnique({ where: { shopId_etsyListingId: { shopId, etsyListingId: externalListingId } }, select: { id: true, sourceHash: true } });
     const data = {
       syncRunId,
       sku: listing.skus?.[0] || null,
@@ -109,55 +110,56 @@ async function importListings(connectionId: string, syncRunId: string, shopId: s
       sourceEndingAt: date(listing.ending_timestamp),
       sourceHash,
     };
-    await prisma.etsyListing.upsert({
-      where: { etsyListingId: String(listing.listing_id) },
+    const listingRecord = await prisma.etsyListing.upsert({
+      where: { shopId_etsyListingId: { shopId, etsyListingId: externalListingId } },
       update: { ...data, lastImportedAt: new Date(), ...(existing?.sourceHash !== sourceHash ? { lastChangedAt: new Date() } : {}) },
-      create: { connectionId, etsyListingId: String(listing.listing_id), ...data },
+      create: { connectionId, workspaceId, shopId, etsyListingId: externalListingId, ...data },
     });
     const [imagesResult, inventoryResult] = await Promise.allSettled([
       get(EtsyEndpoints.listingImages(String(listing.listing_id))).then((value) => paginatedSchema(etsyListingImageSchema).parse(value)),
       get(EtsyEndpoints.listingInventory(String(listing.listing_id))).then((value) => etsyInventorySchema.parse(value)),
     ]);
     if (imagesResult.status === "fulfilled") {
-      for (const image of imagesResult.value.results) await prisma.etsyListingImage.upsert({ where: { etsyImageId: String(image.listing_image_id) }, update: { rank: image.rank, urlFull: image.url_fullxfull, urlThumbnail: image.url_170x135, sourceUpdatedAt: date(image.updated_timestamp), lastImportedAt: new Date() }, create: { etsyImageId: String(image.listing_image_id), etsyListingId: String(listing.listing_id), rank: image.rank, urlFull: image.url_fullxfull, urlThumbnail: image.url_170x135, sourceUpdatedAt: date(image.updated_timestamp) } });
+      for (const image of imagesResult.value.results) await prisma.etsyListingImage.upsert({ where: { shopId_etsyImageId: { shopId, etsyImageId: String(image.listing_image_id) } }, update: { listingId: listingRecord.id, rank: image.rank, urlFull: image.url_fullxfull, urlThumbnail: image.url_170x135, sourceUpdatedAt: date(image.updated_timestamp), lastImportedAt: new Date() }, create: { workspaceId, shopId, listingId: listingRecord.id, etsyImageId: String(image.listing_image_id), etsyListingId: externalListingId, rank: image.rank, urlFull: image.url_fullxfull, urlThumbnail: image.url_170x135, sourceUpdatedAt: date(image.updated_timestamp) } });
     } else {
       recoverableErrors += 1;
       await recordSyncError(syncRunId, "LISTING_IMAGES", String(listing.listing_id), imagesResult.reason);
     }
     if (inventoryResult.status === "fulfilled") {
-      await prisma.etsyListing.update({ where: { etsyListingId: String(listing.listing_id) }, data: { inventorySummary: JSON.parse(JSON.stringify(inventoryResult.value)) as Prisma.InputJsonValue } });
+      await prisma.etsyListing.update({ where: { id: listingRecord.id }, data: { inventorySummary: JSON.parse(JSON.stringify(inventoryResult.value)) as Prisma.InputJsonValue } });
     } else {
       recoverableErrors += 1;
       await recordSyncError(syncRunId, "LISTING_INVENTORY", String(listing.listing_id), inventoryResult.reason);
     }
-    await ensureLocalProductLink(String(listing.listing_id), listing);
+    await ensureLocalProductLink(listingRecord.id, externalListingId, shopId, workspaceId, listing);
   }
   await prisma.etsySyncRun.update({ where: { id: syncRunId }, data: { listingsImported: listings.length } });
   return recoverableErrors;
 }
 
-async function importReceipts(connectionId: string, syncRunId: string, shopId: string, get: <T>(path: string) => Promise<T>) {
-  const schema = paginatedSchema(etsyReceiptSchema); const pages = await collectOffsetPages(async (offset, limit) => schema.parse(await get(EtsyEndpoints.receipts(shopId, offset, limit))));
+async function importReceipts(connectionId: string, syncRunId: string, externalShopId: string, shopId: string, workspaceId: string, get: <T>(path: string) => Promise<T>) {
+  const schema = paginatedSchema(etsyReceiptSchema); const pages = await collectOffsetPages(async (offset, limit) => schema.parse(await get(EtsyEndpoints.receipts(externalShopId, offset, limit))));
   for (const receipt of pages.results) {
-    const id = String(receipt.receipt_id); const sourceHash = hash(receipt); const existing = await prisma.etsyReceipt.findUnique({ where: { etsyReceiptId: id }, select: { sourceHash: true, localOrderId: true } }); const changed = Boolean(existing && existing.sourceHash !== sourceHash);
-    await prisma.etsyReceipt.upsert({ where: { etsyReceiptId: id }, update: { syncRunId, sourceUpdatedAt: date(receipt.update_timestamp), paymentStatus: receipt.is_paid ? "PAID" : "UNPAID", shipmentStatus: receipt.is_shipped ? "SHIPPED" : "OPEN", destinationCountry: receipt.country_iso, destinationRegion: receipt.state, postalCodePrefix: receipt.zip?.slice(0, 3), subtotalAmount: amount(receipt.subtotal), shippingAmount: amount(receipt.total_shipping_cost), discountAmount: amount(receipt.discount_amt), taxAmount: amount(receipt.total_tax_cost), totalAmount: amount(receipt.grandtotal), currency: receipt.grandtotal.currency_code, sourceHash, lastImportedAt: new Date(), needsReconciliation: changed && Boolean(existing?.localOrderId), ...(changed ? { lastChangedAt: new Date() } : {}) }, create: { connectionId, syncRunId, etsyReceiptId: id, sourceCreatedAt: date(receipt.create_timestamp)!, sourceUpdatedAt: date(receipt.update_timestamp), paymentStatus: receipt.is_paid ? "PAID" : "UNPAID", shipmentStatus: receipt.is_shipped ? "SHIPPED" : "OPEN", destinationCountry: receipt.country_iso, destinationRegion: receipt.state, postalCodePrefix: receipt.zip?.slice(0, 3), subtotalAmount: amount(receipt.subtotal), shippingAmount: amount(receipt.total_shipping_cost), discountAmount: amount(receipt.discount_amt), giftWrapAmount: 0, taxAmount: amount(receipt.total_tax_cost), totalAmount: amount(receipt.grandtotal), refundAmount: 0, currency: receipt.grandtotal.currency_code, sourceHash } });
-    for (const item of receipt.transactions || []) await prisma.etsyReceiptItem.upsert({ where: { etsyTransactionId: String(item.transaction_id) }, update: { title: item.title, sku: item.sku, quantity: item.quantity, priceAmount: amount(item.price), currency: item.price.currency_code, lastImportedAt: new Date() }, create: { etsyTransactionId: String(item.transaction_id), etsyReceiptId: id, etsyListingId: item.listing_id ? String(item.listing_id) : null, title: item.title, sku: item.sku, quantity: item.quantity, priceAmount: amount(item.price), currency: item.price.currency_code } });
+    const id = String(receipt.receipt_id); const sourceHash = hash(receipt); const existing = await prisma.etsyReceipt.findUnique({ where: { shopId_etsyReceiptId: { shopId, etsyReceiptId: id } }, select: { sourceHash: true, localOrderId: true } }); const changed = Boolean(existing && existing.sourceHash !== sourceHash);
+    const receiptRecord = await prisma.etsyReceipt.upsert({ where: { shopId_etsyReceiptId: { shopId, etsyReceiptId: id } }, update: { syncRunId, sourceUpdatedAt: date(receipt.update_timestamp), paymentStatus: receipt.is_paid ? "PAID" : "UNPAID", shipmentStatus: receipt.is_shipped ? "SHIPPED" : "OPEN", destinationCountry: receipt.country_iso, destinationRegion: receipt.state, postalCodePrefix: receipt.zip?.slice(0, 3), subtotalAmount: amount(receipt.subtotal), shippingAmount: amount(receipt.total_shipping_cost), discountAmount: amount(receipt.discount_amt), taxAmount: amount(receipt.total_tax_cost), totalAmount: amount(receipt.grandtotal), currency: receipt.grandtotal.currency_code, sourceHash, lastImportedAt: new Date(), needsReconciliation: changed && Boolean(existing?.localOrderId), ...(changed ? { lastChangedAt: new Date() } : {}) }, create: { connectionId, syncRunId, workspaceId, shopId, etsyReceiptId: id, sourceCreatedAt: date(receipt.create_timestamp)!, sourceUpdatedAt: date(receipt.update_timestamp), paymentStatus: receipt.is_paid ? "PAID" : "UNPAID", shipmentStatus: receipt.is_shipped ? "SHIPPED" : "OPEN", destinationCountry: receipt.country_iso, destinationRegion: receipt.state, postalCodePrefix: receipt.zip?.slice(0, 3), subtotalAmount: amount(receipt.subtotal), shippingAmount: amount(receipt.total_shipping_cost), discountAmount: amount(receipt.discount_amt), giftWrapAmount: 0, taxAmount: amount(receipt.total_tax_cost), totalAmount: amount(receipt.grandtotal), refundAmount: 0, currency: receipt.grandtotal.currency_code, sourceHash } });
+    for (const item of receipt.transactions || []) { const listingRecord = item.listing_id ? await prisma.etsyListing.findUnique({ where: { shopId_etsyListingId: { shopId, etsyListingId: String(item.listing_id) } }, select: { id: true } }) : null; await prisma.etsyReceiptItem.upsert({ where: { shopId_etsyTransactionId: { shopId, etsyTransactionId: String(item.transaction_id) } }, update: { receiptRecordId: receiptRecord.id, listingRecordId: listingRecord?.id, title: item.title, sku: item.sku, quantity: item.quantity, priceAmount: amount(item.price), currency: item.price.currency_code, lastImportedAt: new Date() }, create: { workspaceId, shopId, receiptRecordId: receiptRecord.id, listingRecordId: listingRecord?.id, etsyTransactionId: String(item.transaction_id), etsyReceiptId: id, etsyListingId: item.listing_id ? String(item.listing_id) : null, title: item.title, sku: item.sku, quantity: item.quantity, priceAmount: amount(item.price), currency: item.price.currency_code } }); }
   }
   await prisma.etsySyncRun.update({ where: { id: syncRunId }, data: { receiptsImported: pages.results.length } });
 }
 
-async function importLedgerAndPayments(connectionId: string, syncRunId: string, shopId: string, shopCreatedAt: number | null | undefined, get: <T>(path: string) => Promise<T>) {
+async function importLedgerAndPayments(connectionId: string, syncRunId: string, externalShopId: string, shopId: string, workspaceId: string, shopCreatedAt: number | null | undefined, get: <T>(path: string) => Promise<T>) {
   const schema = paginatedSchema(etsyLedgerEntrySchema);
   const minCreated = shopCreatedAt || 946684800;
   const maxCreated = Math.floor(Date.now() / 1000);
-  const pages = await collectOffsetPages(async (offset, limit) => schema.parse(await get(EtsyEndpoints.ledger(shopId, minCreated, maxCreated, offset, limit))));
-  for (const entry of pages.results) { const mapping = mapLedgerEntry(entry.reference_type || "", entry.description); const sourceHash = hash(entry); await prisma.etsyLedgerEntry.upsert({ where: { etsyLedgerEntryId: String(entry.entry_id) }, update: { syncRunId, originalDescription: entry.description, mappedCategory: mapping.category, mappingConfidence: mapping.confidence, manualReview: mapping.manualReview, amount: amount(entry.amount), runningBalance: entry.balance ? amount(entry.balance) : null, currency: entry.amount.currency_code, sourceHash, lastImportedAt: new Date() }, create: { connectionId, syncRunId, etsyLedgerEntryId: String(entry.entry_id), etsyLedgerId: entry.ledger_id ? String(entry.ledger_id) : null, entryType: entry.reference_type || "UNKNOWN", originalDescription: entry.description, mappedCategory: mapping.category, mappingConfidence: mapping.confidence, manualReview: mapping.manualReview, amount: amount(entry.amount), runningBalance: entry.balance ? amount(entry.balance) : null, currency: entry.amount.currency_code, sourceCreatedAt: date(entry.create_date)!, sourceHash } }); }
+  const pages = await collectOffsetPages(async (offset, limit) => schema.parse(await get(EtsyEndpoints.ledger(externalShopId, minCreated, maxCreated, offset, limit))));
+  for (const entry of pages.results) { const mapping = mapLedgerEntry(entry.reference_type || "", entry.description); const sourceHash = hash(entry); await prisma.etsyLedgerEntry.upsert({ where: { shopId_etsyLedgerEntryId: { shopId, etsyLedgerEntryId: String(entry.entry_id) } }, update: { syncRunId, originalDescription: entry.description, mappedCategory: mapping.category, mappingConfidence: mapping.confidence, manualReview: mapping.manualReview, amount: amount(entry.amount), runningBalance: entry.balance ? amount(entry.balance) : null, currency: entry.amount.currency_code, sourceHash, lastImportedAt: new Date() }, create: { connectionId, syncRunId, workspaceId, shopId, etsyLedgerEntryId: String(entry.entry_id), etsyLedgerId: entry.ledger_id ? String(entry.ledger_id) : null, entryType: entry.reference_type || "UNKNOWN", originalDescription: entry.description, mappedCategory: mapping.category, mappingConfidence: mapping.confidence, manualReview: mapping.manualReview, amount: amount(entry.amount), runningBalance: entry.balance ? amount(entry.balance) : null, currency: entry.amount.currency_code, sourceCreatedAt: date(entry.create_date)!, sourceHash } }); }
   let paymentCount = 0; const ids = pages.results.map((entry) => String(entry.entry_id));
-  for (let index = 0; index < ids.length; index += 100) { const paymentPage = paginatedSchema(etsyPaymentSchema).parse(await get(EtsyEndpoints.ledgerPayments(shopId, ids.slice(index, index + 100)))); for (const payment of paymentPage.results) { paymentCount += 1; await prisma.etsyPayment.upsert({ where: { etsyPaymentId: String(payment.payment_id) }, update: { syncRunId, amount: amount(payment.amount_gross), adjustedAmount: amount(payment.adjusted_gross), feeAmount: amount(payment.amount_fees), netAmount: amount(payment.amount_net), currency: payment.amount_gross.currency_code, paidAt: date(payment.posted_timestamp), sourceHash: hash(payment), lastImportedAt: new Date() }, create: { connectionId, syncRunId, etsyPaymentId: String(payment.payment_id), etsyReceiptId: payment.receipt_id ? String(payment.receipt_id) : null, amount: amount(payment.amount_gross), adjustedAmount: amount(payment.adjusted_gross), shippingAmount: 0, taxAmount: 0, feeAmount: amount(payment.amount_fees), netAmount: amount(payment.amount_net), currency: payment.amount_gross.currency_code, paidAt: date(payment.posted_timestamp), sourceHash: hash(payment) } }); } }
+  for (let index = 0; index < ids.length; index += 100) { const paymentPage = paginatedSchema(etsyPaymentSchema).parse(await get(EtsyEndpoints.ledgerPayments(externalShopId, ids.slice(index, index + 100)))); for (const payment of paymentPage.results) { paymentCount += 1; const receipt = payment.receipt_id ? await prisma.etsyReceipt.findUnique({ where: { shopId_etsyReceiptId: { shopId, etsyReceiptId: String(payment.receipt_id) } }, select: { id: true } }) : null; await prisma.etsyPayment.upsert({ where: { shopId_etsyPaymentId: { shopId, etsyPaymentId: String(payment.payment_id) } }, update: { syncRunId, receiptRecordId: receipt?.id, amount: amount(payment.amount_gross), adjustedAmount: amount(payment.adjusted_gross), feeAmount: amount(payment.amount_fees), netAmount: amount(payment.amount_net), currency: payment.amount_gross.currency_code, paidAt: date(payment.posted_timestamp), sourceHash: hash(payment), lastImportedAt: new Date() }, create: { connectionId, syncRunId, workspaceId, shopId, receiptRecordId: receipt?.id, etsyPaymentId: String(payment.payment_id), etsyReceiptId: payment.receipt_id ? String(payment.receipt_id) : null, amount: amount(payment.amount_gross), adjustedAmount: amount(payment.adjusted_gross), shippingAmount: 0, taxAmount: 0, feeAmount: amount(payment.amount_fees), netAmount: amount(payment.amount_net), currency: payment.amount_gross.currency_code, paidAt: date(payment.posted_timestamp), sourceHash: hash(payment) } }); } }
   await prisma.etsySyncRun.update({ where: { id: syncRunId }, data: { ledgerEntriesImported: pages.results.length, paymentsImported: paymentCount } });
 }
 
 async function recordSyncError(syncRunId: string, resource: string, externalId: string | null, error: unknown) {
+  const run = await prisma.etsySyncRun.findUniqueOrThrow({ where: { id: syncRunId }, select: { workspaceId: true, shopId: true } });
   const apiError = error instanceof EtsyApiError ? error : null;
   const validationError = error instanceof ZodError ? error : null;
   const validationMessage = validationError
@@ -166,6 +168,8 @@ async function recordSyncError(syncRunId: string, resource: string, externalId: 
   await prisma.etsySyncError.create({
     data: {
       syncRunId,
+      workspaceId: run.workspaceId,
+      shopId: run.shopId,
       resource,
       externalId,
       code: apiError ? `ETSY_${apiError.status}` : validationError ? "ETSY_RESPONSE_VALIDATION" : error instanceof Error ? error.name : "ERROR",
@@ -175,17 +179,18 @@ async function recordSyncError(syncRunId: string, resource: string, externalId: 
   });
 }
 
-async function ensureLocalProductLink(etsyListingId: string, listing: EtsyListingPayload) {
-  const existingLink = await prisma.etsyListingProductLink.findUnique({ where: { etsyListingId } });
+async function ensureLocalProductLink(listingId: string, etsyListingId: string, shopId: string, workspaceId: string, listing: EtsyListingPayload) {
+  const existingLink = await prisma.etsyListingProductLink.findUnique({ where: { listingId } });
   if (existingLink) return;
 
   const etsySku = listing.skus?.find((value) => value.trim())?.trim();
   const sku = etsySku || `ETSY-${etsyListingId}`;
   const product = await prisma.product.upsert({
-    where: { sku },
+    where: { workspaceId_sku: { workspaceId, sku } },
     update: {},
     create: {
       sku,
+      workspaceId,
       title: listing.title,
       description: listing.description,
       material: listing.materials?.filter(Boolean).join(", ") || null,
@@ -195,6 +200,6 @@ async function ensureLocalProductLink(etsyListingId: string, listing: EtsyListin
     },
   });
   await prisma.etsyListingProductLink.create({
-    data: { etsyListingId, productId: product.id, skuConflict: false },
+    data: { listingId, etsyListingId, workspaceId, shopId, productId: product.id, skuConflict: false },
   });
 }
