@@ -12,10 +12,12 @@ import { prisma } from "@/lib/prisma";
 import { getActiveConnection } from "@/lib/etsy/auth";
 import { syncEtsyAction } from "@/app/actions/etsy";
 import { linkEtsyListingAction } from "@/app/actions/listings";
+import { requireWorkspaceContext } from "@/lib/server/auth/workspace-context";
 
 export default async function EtsyImportPage() {
   await requireAdmin({ redirectTo: "/etsy-import" });
-  const connection = await getActiveConnection();
+  const context = await requireWorkspaceContext();
+  const connection = await getActiveConnection(context);
   const [listings, receipts, payments, ledger, products, lastRun] =
     connection
       ? await Promise.all([
@@ -37,7 +39,7 @@ export default async function EtsyImportPage() {
             take: 20,
           }),
           prisma.product.findMany({
-            where: { active: true },
+            where: { active: true, workspaceId: context.workspaceId },
             orderBy: { sku: "asc" },
           }),
           prisma.etsySyncRun.findFirst({
@@ -115,6 +117,7 @@ export default async function EtsyImportPage() {
                   ["LEDGER_ONLY", "Ledger"],
                 ].map(([value, label]) => (
                   <form action={syncEtsyAction} key={value}>
+                    <input type="hidden" name="shopId" value={connection.saasShopId!} />
                     <input type="hidden" name="syncType" value={value} />
                     <button className="inline-flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-xs font-medium">
                       <RefreshCw size={13} />

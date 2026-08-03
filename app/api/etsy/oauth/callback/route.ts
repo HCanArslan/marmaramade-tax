@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminApi } from "@/lib/auth/require-admin";
 import { completeEtsyOAuth } from "@/lib/etsy/auth";
-import { syncEtsy } from "@/lib/etsy/sync";
+import { getAuthenticatedUser, resolveWorkspaceContextForUser } from "@/lib/server/auth/workspace-context";
+import { queueWorkspaceEtsySync } from "@/lib/etsy/service";
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAdminApi(); const code = request.nextUrl.searchParams.get("code"); const state = request.nextUrl.searchParams.get("state");
-    if (!code || !state) return NextResponse.redirect(new URL("/settings/etsy?error=invalid_callback", request.url));
-    await completeEtsyOAuth(code, state);
-    try {
-      await syncEtsy("LISTINGS_ONLY");
-      return NextResponse.redirect(new URL("/products?connected=1", request.url));
-    } catch {
-      return NextResponse.redirect(new URL("/etsy-import?connected=1&sync=failed", request.url));
-    }
-  } catch { return NextResponse.redirect(new URL("/settings/etsy?error=oauth_failed", request.url)); }
+    const code = request.nextUrl.searchParams.get("code"); const state = request.nextUrl.searchParams.get("state");
+    if (!code || !state) return NextResponse.redirect(new URL("/app/settings/etsy?error=invalid_callback", request.url));
+    const sessionUser = await getAuthenticatedUser();
+    const completed = await completeEtsyOAuth(code, state, sessionUser?.id);
+    const context = await resolveWorkspaceContextForUser(completed.userId, completed.shop.workspaceId);
+    const queued = await queueWorkspaceEtsySync(context, completed.shop.id, "INITIAL_FULL");
+    const target = new URL(completed.redirectPath, request.url);
+    target.searchParams.set("connected", "1");
+    target.searchParams.set("sync", queued.delivered ? "queued" : "background_unavailable");
+    return NextResponse.redirect(target);
+  } catch { return NextResponse.redirect(new URL("/app/settings/etsy?error=oauth_failed", request.url)); }
 }

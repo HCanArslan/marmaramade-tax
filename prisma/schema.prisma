@@ -30,6 +30,25 @@ enum ShopPlatform {
   CSV
 }
 
+enum EtsyConnectionStatus {
+  PENDING
+  ACTIVE
+  TOKEN_EXPIRED
+  REAUTH_REQUIRED
+  SCOPE_VIOLATION
+  DISCONNECTED
+  ERROR
+}
+
+enum EtsySyncRunStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+  CANCELLED
+}
+
 enum SaasBusinessType {
   NO_REGISTERED_BUSINESS
   ARTISAN_EXEMPTION
@@ -59,6 +78,7 @@ model User {
   memberships      Membership[]
   preference       UserPreference?
   legalAcceptances LegalAcceptance[]
+  etsyOAuthStates  EtsyOAuthState[]
 
   @@map("user")
 }
@@ -191,6 +211,7 @@ model Shop {
   orders              Order[]
 
   @@unique([workspaceId, platform, externalShopId])
+  @@unique([platform, externalShopId])
   @@index([workspaceId, platform, status])
 }
 
@@ -1091,10 +1112,10 @@ model AdminSecurityEvent {
 }
 
 model EtsyConnection {
-  id                      String            @id @default(cuid())
-  workspaceId             String?
-  saasShopId              String?           @unique
-  shopId                  String            @unique
+  id                      String               @id @default(cuid())
+  workspaceId             String
+  saasShopId              String               @unique
+  shopId                  String               @unique
   etsyUserId              String
   shopName                String?
   shopTitle               String?
@@ -1104,41 +1125,51 @@ model EtsyConnection {
   encryptedRefreshToken   String
   accessTokenExpiresAt    DateTime
   scopes                  String
-  connectedAt             DateTime          @default(now())
+  connectedAt             DateTime             @default(now())
   disconnectedAt          DateTime?
   lastRefreshedAt         DateTime?
   lastSuccessfulApiCallAt DateTime?
   lastSuccessfulSyncAt    DateTime?
-  status                  String            @default("ACTIVE")
-  createdAt               DateTime          @default(now())
-  updatedAt               DateTime          @updatedAt
+  status                  EtsyConnectionStatus @default(ACTIVE)
+  tokenVersion            Int                  @default(1)
+  refreshLeaseId          String?
+  refreshLeaseUntil       DateTime?
+  refreshFailureCode      String?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
   syncRuns                EtsySyncRun[]
   listings                EtsyListing[]
   receipts                EtsyReceipt[]
   payments                EtsyPayment[]
   ledgerEntries           EtsyLedgerEntry[]
-  workspace               Workspace?        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  saasShop                Shop?             @relation(fields: [saasShopId], references: [id], onDelete: Restrict)
+  workspace               Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  saasShop                Shop                 @relation(fields: [saasShopId], references: [id], onDelete: Restrict)
 
   @@index([workspaceId, status])
   @@index([status])
 }
 
 model EtsyOAuthState {
-  id          String     @id @default(cuid())
-  workspaceId String?
-  shopId      String?
-  stateHash   String     @unique
-  verifier    String
-  redirectUri String
-  expiresAt   DateTime
-  consumedAt  DateTime?
-  createdAt   DateTime   @default(now())
-  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  shop        Shop?      @relation(fields: [shopId], references: [id], onDelete: Restrict)
+  id              String     @id @default(cuid())
+  workspaceId     String?
+  shopId          String?
+  userId          String?
+  stateHash       String     @unique
+  verifier        String
+  redirectUri     String
+  redirectPath    String     @default("/app/settings/etsy")
+  intent          String     @default("CONNECT")
+  requestedScopes String     @default("shops_r listings_r transactions_r")
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  createdAt       DateTime   @default(now())
+  workspace       Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  shop            Shop?      @relation(fields: [shopId], references: [id], onDelete: Restrict)
+  user            User?      @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([workspaceId, expiresAt, consumedAt])
   @@index([shopId])
+  @@index([userId, expiresAt, consumedAt])
   @@index([expiresAt, consumedAt])
 }
 
@@ -1147,11 +1178,25 @@ model EtsySyncRun {
   workspaceId           String?
   shopId                String?
   connectionId          String
+  jobKey                String?           @unique
   syncType              String
-  status                String            @default("RUNNING")
+  status                EtsySyncRunStatus @default(QUEUED)
   cursor                String?
+  checkpoint            Json?
+  queuedAt              DateTime          @default(now())
   startedAt             DateTime          @default(now())
   completedAt           DateTime?
+  lastHeartbeatAt       DateTime?
+  pagesProcessed        Int               @default(0)
+  recordsRead           Int               @default(0)
+  recordsCreated        Int               @default(0)
+  recordsUpdated        Int               @default(0)
+  recordsUnchanged      Int               @default(0)
+  warnings              Json?
+  rateLimitState        Json?
+  retryCount            Int               @default(0)
+  errorCode             String?
+  sanitizedErrorMessage String?
   listingsImported      Int               @default(0)
   receiptsImported      Int               @default(0)
   paymentsImported      Int               @default(0)
@@ -1287,20 +1332,23 @@ model EtsyListingImage {
 }
 
 model EtsyListingProductLink {
-  id            String       @id @default(cuid())
-  workspaceId   String?
-  shopId        String?
-  listingId     String?      @unique
-  etsyListingId String
-  productId     String
-  skuConflict   Boolean      @default(false)
-  confirmedAt   DateTime     @default(now())
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  listing       EtsyListing? @relation(fields: [listingId], references: [id], onDelete: Cascade)
-  product       Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
-  workspace     Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  shop          Shop?        @relation(fields: [shopId], references: [id], onDelete: Restrict)
+  id                String       @id @default(cuid())
+  workspaceId       String?
+  shopId            String?
+  listingId         String?      @unique
+  etsyListingId     String
+  productId         String
+  skuConflict       Boolean      @default(false)
+  mappingMethod     String       @default("LEGACY_AUTO")
+  mappingConfidence Decimal?
+  reviewStatus      String       @default("PENDING")
+  confirmedAt       DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  listing           EtsyListing? @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  product           Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  workspace         Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  shop              Shop?        @relation(fields: [shopId], references: [id], onDelete: Restrict)
 
   @@unique([shopId, etsyListingId])
   @@index([workspaceId])
@@ -1321,17 +1369,19 @@ model EtsyReceipt {
   shippedAt           DateTime?
   paymentStatus       String?
   shipmentStatus      String?
+  cancellationStatus  String?
+  refundStatus        String?
   destinationCountry  String?
   destinationRegion   String?
   postalCodePrefix    String?
   buyerCurrency       String?
-  subtotalAmount      Decimal
-  shippingAmount      Decimal
-  discountAmount      Decimal
-  giftWrapAmount      Decimal
-  taxAmount           Decimal
+  subtotalAmount      Decimal?
+  shippingAmount      Decimal?
+  discountAmount      Decimal?
+  giftWrapAmount      Decimal?
+  taxAmount           Decimal?
   totalAmount         Decimal
-  refundAmount        Decimal
+  refundAmount        Decimal?
   currency            String
   sourceHash          String
   needsReconciliation Boolean           @default(false)
@@ -1393,8 +1443,8 @@ model EtsyPayment {
   etsyReceiptId   String?
   amount          Decimal
   adjustedAmount  Decimal
-  shippingAmount  Decimal
-  taxAmount       Decimal
+  shippingAmount  Decimal?
+  taxAmount       Decimal?
   feeAmount       Decimal
   netAmount       Decimal
   currency        String
@@ -1474,6 +1524,7 @@ model EtsyWebhookEvent {
   saasShop         Shop?      @relation(fields: [saasShopId], references: [id], onDelete: Restrict)
 
   @@unique([saasShopId, webhookId])
+  @@unique([webhookId])
   @@index([workspaceId, createdAt])
   @@index([saasShopId, createdAt])
   @@index([shopId, createdAt])

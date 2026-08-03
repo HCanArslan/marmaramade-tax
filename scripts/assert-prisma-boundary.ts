@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 
 export const legacyPrismaImportAllowlist = [
   "app/accountant/page.tsx",
-  "app/actions/etsy.ts",
   "app/actions/formation.ts",
   "app/actions/import-receipt.ts",
   "app/actions/ledger.ts",
@@ -13,7 +12,6 @@ export const legacyPrismaImportAllowlist = [
   "app/actions/shipentegra.ts",
   "app/api/cron/shipentegra-tracking/route.ts",
   "app/api/documents/[id]/route.ts",
-  "app/api/etsy/webhook/route.ts",
   "app/api/exports/[entity]/route.ts",
   "app/audit-log/page.tsx",
   "app/banking/page.tsx",
@@ -50,7 +48,6 @@ export const legacyPrismaImportAllowlist = [
   "app/tax-exemption/page.tsx",
   "app/taxes/page.tsx",
   "lib/auth/security.ts",
-  "lib/etsy/auth.ts",
   "lib/etsy/sync.ts",
   "lib/reporting.ts",
   "lib/shipentegra/documents.ts",

@@ -7,6 +7,10 @@ function keyFrom(value: string) {
   return key;
 }
 
+export function validateTokenEncryptionKey(value: string) {
+  keyFrom(value);
+}
+
 export function encryptToken(plaintext: string, keyValue: string) {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", keyFrom(keyValue), iv);

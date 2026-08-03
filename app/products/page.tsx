@@ -28,12 +28,14 @@ import { requireAdmin } from "@/lib/auth/require-admin";
 import { getActiveConnection } from "@/lib/etsy/auth";
 import { resolveListingPricing } from "@/lib/etsy/pricing";
 import { prisma } from "@/lib/prisma";
+import { requireWorkspaceContext } from "@/lib/server/auth/workspace-context";
 
 export default async function ProductsPage() {
   await requireAdmin({ redirectTo: "/products" });
-  const connection = await getActiveConnection();
+  const context = await requireWorkspaceContext();
+  const connection = await getActiveConnection(context);
   const allProducts = await prisma.product.findMany({
-    where: { active: true },
+    where: { active: true, workspaceId: context.workspaceId },
     include: {
       costVersions: {
         orderBy: { effectiveFrom: "desc" },
@@ -94,6 +96,7 @@ export default async function ProductsPage() {
         </div>
         {connection && (
           <form action={syncEtsyAction}>
+            <input type="hidden" name="shopId" value={connection.saasShopId!} />
             <input type="hidden" name="syncType" value="LISTINGS_ONLY" />
             <button className="inline-flex items-center justify-center gap-2 rounded-xl bg-jade px-4 py-2.5 text-sm font-medium text-white">
               <RefreshCw size={16} /> Sync Etsy listings

@@ -52,6 +52,7 @@ if (process.env.VERCEL_ENV === "production") {
   await recoverProductLogisticsMigration();
   run("npx", ["prisma", "migrate", "deploy"]);
   run("npm", ["run", "db:prompt3-report"]);
+  run("npm", ["run", "db:prompt4-report"]);
 }
 
 run("npx", ["next", "build"]);

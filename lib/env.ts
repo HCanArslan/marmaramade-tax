@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { assertReadOnlyEtsyScopes } from "@/lib/etsy/scopes";
+import { validateTokenEncryptionKey } from "@/lib/etsy/encryption";
 
 function cleanEnvironmentValue(value: unknown) {
   if (typeof value !== "string") return value;
@@ -78,6 +79,10 @@ const serverEnvSchema = z.object({
     z.number().int().min(0).max(30),
     0,
   ),
+  INNGEST_EVENT_KEY: optionalSecret,
+  INNGEST_SIGNING_KEY: optionalSecret,
+  INNGEST_SIGNING_KEY_FALLBACK: optionalSecret,
+  INNGEST_SERVE_ORIGIN: optionalUrl,
   SHIPENTEGRA_CLIENT_ID: optionalSecret,
   SHIPENTEGRA_CLIENT_SECRET: optionalSecret,
   SHIPENTEGRA_ENVIRONMENT: z.preprocess(
@@ -198,10 +203,34 @@ export function requireEtsySecrets() {
     !env.TOKEN_ENCRYPTION_KEY
   )
     throw new Error("Etsy integration is not configured.");
+  const redirect = new URL(env.ETSY_REDIRECT_URI);
+  if (
+    process.env.NODE_ENV === "production" &&
+    env.ETSY_REDIRECT_URI !==
+      "https://marmaramade-tax.vercel.app/api/etsy/oauth/callback"
+  ) {
+    throw new Error("Production Etsy callback URL is not configured exactly.");
+  }
+  if (process.env.NODE_ENV === "production" && redirect.protocol !== "https:") {
+    throw new Error("Production Etsy callback URL must use HTTPS.");
+  }
+  validateTokenEncryptionKey(env.TOKEN_ENCRYPTION_KEY);
   return env as ServerEnv & {
     ETSY_API_KEYSTRING: string;
     ETSY_SHARED_SECRET: string;
     TOKEN_ENCRYPTION_KEY: string;
+  };
+}
+
+export function getBackgroundDeliveryConfig() {
+  const env = getServerEnv();
+  const configured = Boolean(env.INNGEST_EVENT_KEY && env.INNGEST_SIGNING_KEY);
+  return {
+    configured,
+    eventKey: env.INNGEST_EVENT_KEY,
+    signingKey: env.INNGEST_SIGNING_KEY,
+    signingKeyFallback: env.INNGEST_SIGNING_KEY_FALLBACK,
+    serveOrigin: env.INNGEST_SERVE_ORIGIN,
   };
 }
 

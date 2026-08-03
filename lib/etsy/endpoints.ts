@@ -5,7 +5,12 @@ export const EtsyEndpoints = {
   listings: (shopId: string, state: (typeof ETSY_LISTING_STATES)[number], offset: number, limit = 100) => `shops/${enc(shopId)}/listings?state=${state}&limit=${limit}&offset=${offset}&includes=BuyerPrice`,
   listingImages: (listingId: string) => `listings/${enc(listingId)}/images`,
   listingInventory: (listingId: string) => `listings/${enc(listingId)}/inventory`,
-  receipts: (shopId: string, offset: number, limit = 100) => `shops/${enc(shopId)}/receipts?limit=${limit}&offset=${offset}`,
+  receipts: (shopId: string, offset: number, limit = 100, minLastModified?: number, maxLastModified?: number) => {
+    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (minLastModified) query.set("min_last_modified", String(minLastModified));
+    if (maxLastModified) query.set("max_last_modified", String(maxLastModified));
+    return `shops/${enc(shopId)}/receipts?${query}`;
+  },
   receiptTransactions: (shopId: string, receiptId: string) => `shops/${enc(shopId)}/receipts/${enc(receiptId)}/transactions`,
   payments: (shopId: string, paymentIds: string[]) => `shops/${enc(shopId)}/payments?payment_ids=${paymentIds.map(enc).join(",")}`,
   ledgerPayments: (shopId: string, entryIds: string[]) => `shops/${enc(shopId)}/payment-account/ledger-entries/payments?ledger_entry_ids=${entryIds.map(enc).join(",")}`,

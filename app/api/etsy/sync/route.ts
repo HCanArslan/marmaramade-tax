@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { AdminAuthorizationError, requireAdminApi } from "@/lib/auth/require-admin";
 import { assertSameOrigin } from "@/lib/http-security";
-import { ETSY_SYNC_TYPES, syncEtsy } from "@/lib/etsy/sync";
+import { ETSY_SYNC_TYPES } from "@/lib/etsy/sync";
+import { requireWorkspaceContext } from "@/lib/server/auth/workspace-context";
+import { queueWorkspaceEtsySync } from "@/lib/etsy/service";
 
-const schema = z.object({ syncType: z.enum(ETSY_SYNC_TYPES) });
+const schema = z.object({ shopId: z.string().min(1), syncType: z.enum(ETSY_SYNC_TYPES).default("INCREMENTAL") });
 export async function POST(request: Request) {
-  try { await requireAdminApi(); assertSameOrigin(request); const input = schema.parse(await request.json()); return NextResponse.json({ run: await syncEtsy(input.syncType) }); }
-  catch (error) { const status = error instanceof z.ZodError ? 400 : error instanceof AdminAuthorizationError ? 401 : 500; return NextResponse.json({ error: error instanceof z.ZodError ? "Invalid sync request." : status === 401 ? "Unauthorized." : "Etsy sync could not complete." }, { status }); }
+  try {
+    const context = await requireWorkspaceContext();
+    assertSameOrigin(request);
+    const input = schema.parse(await request.json());
+    const result = await queueWorkspaceEtsySync(context, input.shopId, input.syncType, { manual: true });
+    if (!result.delivered) return NextResponse.json({ error: "Background synchronization is not configured.", runId: result.run.id }, { status: 503 });
+    return NextResponse.json({ queued: true, duplicate: result.duplicate, runId: result.run.id }, { status: 202 });
+  }
+  catch (error) { const status = error instanceof z.ZodError ? 400 : 404; return NextResponse.json({ error: error instanceof z.ZodError ? "Invalid sync request." : "Etsy shop was not found." }, { status }); }
 }

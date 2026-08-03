@@ -96,7 +96,6 @@ describe("retained legacy login security utilities", () => {
       "app/etsy-import/receipts/[id]/page.tsx",
       "app/reconciliation/page.tsx",
       "app/settings/security/page.tsx",
-      "app/settings/etsy/page.tsx",
       "app/documents/page.tsx",
       "app/compliance/page.tsx",
       "app/goals/page.tsx",
@@ -106,14 +105,16 @@ describe("retained legacy login security utilities", () => {
     ];
     for (const file of files)
       expect(await source(file), file).toContain("requireAdmin(");
+    expect(await source("app/settings/etsy/page.tsx")).toContain('redirect("/app/settings/etsy")');
+    expect(await source("app/(saas)/app/settings/etsy/page.tsx")).toContain("requireWorkspaceContext()");
   });
   it("protects the sensitive Etsy sync API", async () =>
     expect(await source("app/api/etsy/sync/route.ts")).toContain(
-      "requireAdminApi()",
+      "requireWorkspaceContext()",
     ));
   it("protects all sensitive Server Actions", async () => {
+    expect(await source("app/actions/etsy.ts")).toContain("requireWorkspaceContext()");
     for (const file of [
-      "app/actions/etsy.ts",
       "app/actions/listings.ts",
       "app/actions/import-receipt.ts",
       "app/actions/ledger.ts",

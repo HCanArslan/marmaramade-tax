@@ -70,7 +70,7 @@ describe("SaaS architecture boundaries", () => {
 
   it("enforces the incremental Prisma repository boundary", async () => {
     expect(await validatePrismaBoundary()).toEqual([]);
-    expect(legacyPrismaImportAllowlist).toHaveLength(54);
+    expect(legacyPrismaImportAllowlist).toHaveLength(51);
     const compatibility = await source("lib/prisma.ts");
     const repository = await source(
       "lib/server/repositories/health-repository.ts",

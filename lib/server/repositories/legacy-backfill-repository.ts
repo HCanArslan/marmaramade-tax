@@ -51,24 +51,6 @@ export async function runLegacyWorkspaceBackfill(database = prisma) {
       tx.etsyOAuthState.updateMany({ where: { workspaceId: null }, data: { workspaceId } }),
     ]);
 
-    const connections = await tx.etsyConnection.findMany({
-      where: { OR: [{ workspaceId: null }, { saasShopId: null }] },
-    });
-    for (const connection of connections) {
-      const shop = await tx.shop.upsert({
-        where: { workspaceId_platform_externalShopId: { workspaceId, platform: "ETSY", externalShopId: connection.shopId } },
-        update: {},
-        create: { workspaceId, platform: "ETSY", externalShopId: connection.shopId, name: connection.shopName || "Etsy shop", status: connection.status, defaultCurrency: connection.shopCurrency },
-      });
-      await tx.etsyConnection.update({ where: { id: connection.id }, data: { workspaceId, saasShopId: shop.id } });
-      await Promise.all([
-        tx.etsySyncRun.updateMany({ where: { connectionId: connection.id, workspaceId: null }, data: { workspaceId, shopId: shop.id } }),
-        tx.etsyListing.updateMany({ where: { connectionId: connection.id, workspaceId: null }, data: { workspaceId, shopId: shop.id } }),
-        tx.etsyReceipt.updateMany({ where: { connectionId: connection.id, workspaceId: null }, data: { workspaceId, shopId: shop.id } }),
-        tx.etsyPayment.updateMany({ where: { connectionId: connection.id, workspaceId: null }, data: { workspaceId, shopId: shop.id } }),
-        tx.etsyLedgerEntry.updateMany({ where: { connectionId: connection.id, workspaceId: null }, data: { workspaceId, shopId: shop.id } }),
-      ]);
-    }
   });
 
   const afterCounts = {
