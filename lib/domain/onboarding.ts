@@ -42,6 +42,7 @@ export function workspaceCompleteness(input: {
   destinationSelected: boolean;
   businessProfileSelected: boolean;
   tariffConfigured?: boolean;
+  exchangeRateAvailable?: boolean;
 }) {
   const productStates = input.products.map(productCompleteness);
   const includedProducts = productStates.filter((item) => item.ready).length;
@@ -52,6 +53,7 @@ export function workspaceCompleteness(input: {
     { key: "products_linked", label: "Products linked", status: input.linkedProducts === 0 ? "MISSING" : input.linkedProducts < input.importedListings ? "PARTIAL" : "COMPLETE", blocking: true },
     { key: "product_costs", label: "Product costs", status: productCostsConfigured === 0 ? "MISSING" : productCostsConfigured < input.products.length ? "PARTIAL" : "COMPLETE", blocking: true },
     { key: "shipping", label: "Shipping costs", status: shippingConfigured === 0 ? "MISSING" : shippingConfigured < input.products.length ? "PARTIAL" : "COMPLETE", blocking: true },
+    { key: "exchange_rate", label: "Exchange rate", status: input.exchangeRateAvailable === false ? "MISSING" : "COMPLETE", blocking: true },
     { key: "marketplace_fees", label: "Marketplace fees", status: input.marketplaceFeesAvailable ? "COMPLETE" : "MISSING", blocking: false },
     { key: "destination", label: "Destination selected", status: input.destinationSelected ? "COMPLETE" : "MISSING", blocking: true },
     { key: "tariff", label: "Tariff/customs", status: input.tariffConfigured ? "COMPLETE" : "PARTIAL", blocking: false },
@@ -66,7 +68,7 @@ export function workspaceCompleteness(input: {
     excludedProducts: input.products.length - includedProducts,
     readiness: blockers.length === 0
       ? (includedProducts === input.products.length ? "Ready for detailed profitability" : "Ready for an initial estimate")
-      : blockers.some((item) => item.key === "product_costs") ? "Needs product costs" : blockers.some((item) => item.key === "shipping") ? "Needs shipping costs" : "Needs setup details",
+      : blockers.some((item) => item.key === "product_costs") ? "Needs product costs" : blockers.some((item) => item.key === "shipping") ? "Needs shipping costs" : blockers.some((item) => item.key === "exchange_rate") ? "Needs exchange rate" : "Needs setup details",
     blockingGaps: blockers.map((item) => item.label),
   };
 }
@@ -81,11 +83,13 @@ export function calculateFirstResult(products: Array<{
   packagingCost: Decimal.Value | null;
   shippingCost: Decimal.Value | null;
   otherKnownCost?: Decimal.Value | null;
+  revenueMissingReason?: "FX" | "REVENUE";
 }>) {
   const total = { revenue: new Decimal(0), fees: new Decimal(0), knownProductCosts: new Decimal(0), shipping: new Decimal(0), cashProfit: new Decimal(0), economicProfit: new Decimal(0) };
   const warnings = new Set<string>();
   let included = 0;
   for (const product of products) {
+    if (!known(product.revenue)) warnings.add(product.revenueMissingReason === "FX" ? "Exchange rate is missing." : "Listing revenue is missing.");
     if (![product.revenue, product.materialCost, product.laborHours, product.laborRate, product.shippingCost].every(known)) {
       if (!known(product.materialCost)) warnings.add("Material cost is missing.");
       if (!known(product.shippingCost)) warnings.add("Shipping cost is missing.");

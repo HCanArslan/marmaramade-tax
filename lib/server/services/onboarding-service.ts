@@ -58,6 +58,18 @@ export async function loadOnboarding(context: WorkspaceContext) {
     snapshot = await getOnboardingSnapshot(context);
   }
   const shipping = snapshot.costDefault?.defaultShippingCost ?? null;
+  const reportingCurrency = snapshot.costDefault?.reportingCurrency ?? snapshot.businessProfile?.reportingCurrency ?? "USD";
+  const costCurrency = snapshot.costDefault?.costCurrency ?? "TRY";
+  const rate = snapshot.exchangeRate;
+  const shippingCurrency = snapshot.costDefault?.defaultShippingCurrency ?? costCurrency;
+  const listingCurrencies = new Set(snapshot.products
+    .map((product) => product.etsyListingLinks[0]?.listing?.priceCurrency)
+    .filter((currency): currency is string => Boolean(currency)));
+  const canConvert = (sourceCurrency: string) => sourceCurrency === reportingCurrency || Boolean(rate && (
+    (rate.baseCurrency === sourceCurrency && rate.quoteCurrency === reportingCurrency)
+    || (rate.quoteCurrency === sourceCurrency && rate.baseCurrency === reportingCurrency)
+  ));
+  const requiredCurrencies = new Set([costCurrency, shippingCurrency, ...listingCurrencies]);
   const completeness = workspaceCompleteness({
     importedListings: snapshot.importedListings,
     linkedProducts: snapshot.linkedProducts,
@@ -65,23 +77,22 @@ export async function loadOnboarding(context: WorkspaceContext) {
     marketplaceFeesAvailable: snapshot.marketplaceFeesAvailable,
     destinationSelected: Boolean(snapshot.costDefault?.targetMarket),
     businessProfileSelected: Boolean(snapshot.businessProfile),
+    exchangeRateAvailable: [...requiredCurrencies].every(canConvert),
   });
-  const reportingCurrency = snapshot.costDefault?.reportingCurrency ?? snapshot.businessProfile?.reportingCurrency ?? "USD";
-  const costCurrency = snapshot.costDefault?.costCurrency ?? "TRY";
-  const rate = snapshot.exchangeRate;
-  const convertCost = (value: Decimal.Value | null) => {
+  const convertMoney = (value: Decimal.Value | null, sourceCurrency: string) => {
     if (value === null || value === undefined) return null;
-    if (costCurrency === reportingCurrency) return new Decimal(value);
+    if (sourceCurrency === reportingCurrency) return new Decimal(value);
     if (!rate) return null;
     const amount = new Decimal(value);
-    if (rate.baseCurrency === costCurrency && rate.quoteCurrency === reportingCurrency) return amount.mul(rate.rate);
-    if (rate.quoteCurrency === costCurrency && rate.baseCurrency === reportingCurrency) return amount.div(rate.rate);
+    if (rate.baseCurrency === sourceCurrency && rate.quoteCurrency === reportingCurrency) return amount.mul(rate.rate);
+    if (rate.quoteCurrency === sourceCurrency && rate.baseCurrency === reportingCurrency) return amount.div(rate.rate);
     return null;
   };
+  const convertCost = (value: Decimal.Value | null) => convertMoney(value, costCurrency);
   const firstResult = calculateFirstResult(snapshot.products.map((product) => {
     const values = productInput(product, shipping);
     const listing = product.etsyListingLinks[0]?.listing;
-    const revenue = listing?.priceCurrency === reportingCurrency ? listing.priceAmount : null;
+    const revenue = listing ? convertMoney(listing.priceAmount, listing.priceCurrency) : null;
     return {
       revenue,
       fees: null,
@@ -90,8 +101,9 @@ export async function loadOnboarding(context: WorkspaceContext) {
       laborRate: convertCost(values.laborRate),
       economicLaborRate: product.costVersions[0]?.economicHourlyRateTry ? convertCost(product.costVersions[0].economicHourlyRateTry) : null,
       packagingCost: convertCost(values.packagingCost),
-      shippingCost: snapshot.costDefault?.defaultShippingCurrency === reportingCurrency ? shipping : convertCost(shipping),
+      shippingCost: convertMoney(shipping, shippingCurrency),
       otherKnownCost: convertCost(snapshot.costDefault?.exportHandlingCost ?? null),
+      revenueMissingReason: listing && !canConvert(listing.priceCurrency) ? "FX" as const : "REVENUE" as const,
     };
   }));
   const average = (values: Decimal.Value[]) => values.length

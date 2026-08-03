@@ -37,6 +37,14 @@ describe("Prompt 5 completeness and first-result boundary", () => {
     expect(result.dimensions.find((item) => item.key === "shipping")?.status).toBe("MISSING");
   });
 
+  it("reports missing FX without substituting zero", () => {
+    const completeness = workspaceCompleteness({ importedListings: 1, linkedProducts: 1, products: [{ materialCost: "10", laborHours: "1", laborRate: "5", packagingCost: "2", shippingCost: "3" }], marketplaceFeesAvailable: true, destinationSelected: true, businessProfileSelected: true, exchangeRateAvailable: false });
+    expect(completeness.blockingGaps).toContain("Exchange rate");
+    const preview = calculateFirstResult([{ revenue: null, revenueMissingReason: "FX", fees: null, materialCost: "10", laborHours: "1", laborRate: "5", economicLaborRate: "5", packagingCost: "2", shippingCost: "3" }]);
+    expect(preview.included).toBe(0);
+    expect(preview.warnings).toContain("Exchange rate is missing.");
+  });
+
   it.each([
     ["NO_REGISTERED_BUSINESS", "NONE"], ["ARTISAN_EXEMPTION", "CONSERVATIVE"], ["SOLE_PROPRIETORSHIP", "STANDARD"], ["LIMITED_OR_CORPORATION", "STANDARD"], ["OTHER_OR_UNKNOWN", "NONE"],
   ])("maps %s to a planning preset without eligibility conclusions", (type, preset) => expect(businessPresetFor(type)).toBe(preset));
