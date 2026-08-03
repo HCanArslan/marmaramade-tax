@@ -30,7 +30,7 @@ export default async function WorkspaceEtsySettingsPage({
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">Read-only Etsy connection</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-600">Connect marketplace data to this workspace. Tokens remain encrypted and every Etsy marketplace request is GET-only.</p>
         </div>
-        <Link href="/api/etsy/oauth/start?redirectTo=%2Fapp%2Fsettings%2Fetsy" className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#18342e] px-4 py-2.5 text-sm font-medium text-white"><Link2 size={16}/>Connect Etsy</Link>
+        <Link prefetch={false} href="/api/etsy/oauth/start?redirectTo=%2Fapp%2Fsettings%2Fetsy" className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#18342e] px-4 py-2.5 text-sm font-medium text-white"><Link2 size={16}/>Connect Etsy</Link>
       </header>
 
       <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-900">
@@ -53,7 +53,7 @@ export default async function WorkspaceEtsySettingsPage({
               <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                 <div><p className="text-xs font-medium uppercase tracking-wide text-stone-500">{connection.status}</p><h2 className="mt-1 text-xl font-semibold">{connection.shopName || connection.saasShop?.name || "Etsy shop"}</h2><p className="mt-1 text-xs text-stone-500">Last successful sync: {formatDate(connection.lastSuccessfulSyncAt)}</p></div>
                 <div className="flex flex-wrap gap-2">
-                  <Link href={`/api/etsy/oauth/start?shopId=${encodeURIComponent(connection.saasShopId!)}&redirectTo=%2Fapp%2Fsettings%2Fetsy`} className="inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 py-2 text-sm"><RefreshCw size={15}/>Reconnect</Link>
+                  <Link prefetch={false} href={`/api/etsy/oauth/start?shopId=${encodeURIComponent(connection.saasShopId!)}&redirectTo=%2Fapp%2Fsettings%2Fetsy`} className="inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 py-2 text-sm"><RefreshCw size={15}/>Reconnect</Link>
                   <form action={syncEtsyAction}><input type="hidden" name="shopId" value={connection.saasShopId!}/><input type="hidden" name="syncType" value="INCREMENTAL"/><button disabled={!backgroundReady || connection.status !== "ACTIVE"} className="inline-flex items-center gap-2 rounded-xl bg-[#18342e] px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50">Sync now</button></form>
                   {context.role === "OWNER" && <form action={disconnectEtsyAction}><input type="hidden" name="shopId" value={connection.saasShopId!}/><button className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"><Unplug size={15}/>Disconnect</button></form>}
                 </div>

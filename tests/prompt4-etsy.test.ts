@@ -110,6 +110,11 @@ describe("Prompt 4 token, webhook, and read-only regression contracts", () => {
     expect(await source("lib/inngest/etsy-functions.ts")).toContain('key: "event.data.shopId"');
   });
 
+  it("does not prefetch state-creating OAuth start routes", async () => {
+    const settings = await source("app/(saas)/app/settings/etsy/page.tsx");
+    expect(settings.match(/prefetch=\{false\}/g)).toHaveLength(2);
+  });
+
   it("enforces the expanded Etsy read-only guard", async () => {
     expect(await validateEtsyReadOnlyBoundary()).toEqual([]);
   });
