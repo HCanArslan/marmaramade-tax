@@ -4,9 +4,9 @@ Private financial planning and Etsy record keeping for MarmaraMade. The applicat
 
 ## Current stack
 
-- Next.js 16.2.10 and React 19.2.7
-- NextAuth 4.24.14 (the current stable `next-auth` release)
-- Prisma 7.8 with the PostgreSQL driver adapter
+- Next.js 16.2.12 and React 19.2.7
+- Better Auth 1.6.25 with database-backed sessions
+- Prisma 7.9.1 with the PostgreSQL driver adapter
 - Tailwind CSS 4.3
 - Zod 4, Recharts 3, Vitest 4
 - Private Vercel Blob document storage (server-controlled upload/download)
@@ -36,22 +36,24 @@ Do not put secrets in Git and do not commit `.env`. Vercel environment variables
 ```dotenv
 DATABASE_URL="postgresql://...pooled runtime connection..."
 DIRECT_URL="postgresql://...direct migration connection..."
-AUTH_SECRET="a cryptographically random secret"
-ADMIN_EMAIL="you@example.com"
-ADMIN_PASSWORD_HASH="$2b$12$..."
+BETTER_AUTH_SECRET="32+ high-entropy bytes"
+BETTER_AUTH_URL="https://your-production-domain.example"
+FOUNDER_EMAIL="you@example.com"
 ```
 
-`NEXTAUTH_URL` is optional on Vercel when system environment variables are exposed. If you use a stable custom domain, setting it explicitly to that HTTPS origin is recommended.
+Google OAuth is optional and is enabled only when both `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET` are configured. Exact additional origins belong in
+`BETTER_AUTH_TRUSTED_ORIGINS`.
 
 Private documents additionally require `BLOB_READ_WRITE_TOKEN`; `DOCUMENT_MAX_SIZE_MB` defaults to 25. See [Document storage](docs/DOCUMENT_STORAGE.md).
 
-Generate the admin password hash locally:
+Bootstrap the founder only after applying the additive Prompt 2 migration:
 
 ```powershell
-npm run auth:hash-password
+npm run auth:bootstrap-founder
 ```
 
-Generate `AUTH_SECRET` with a password manager, `openssl rand -base64 32`, or:
+Generate `BETTER_AUTH_SECRET` with a password manager, `openssl rand -base64 32`, or:
 
 ```powershell
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
@@ -97,8 +99,8 @@ npm run guard:etsy-readonly
 
 - PostgreSQL stores products, cost versions, orders, immutable calculation snapshots, Etsy imports, and persistent login-lockout events.
 - Prisma applies versioned SQL migrations and provides typed database access.
-- `ADMIN_PASSWORD_HASH` stores a one-way bcrypt hash instead of a plaintext password.
-- `AUTH_SECRET` encrypts and signs administrator sessions.
+- Better Auth hashes account passwords and stores opaque database sessions.
+- `BETTER_AUTH_SECRET` signs authentication cookies and tokens.
 - `TOKEN_ENCRYPTION_KEY` encrypts Etsy OAuth tokens at rest.
 - `.env.example` documents variable names safely; `.env` contains private values and is ignored by Git.
 

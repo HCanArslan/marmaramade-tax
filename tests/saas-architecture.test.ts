@@ -20,6 +20,7 @@ describe("SaaS architecture boundaries", () => {
       "app/(auth)/login/page.tsx",
       "app/(auth)/signup/page.tsx",
       "app/(auth)/forgot-password/page.tsx",
+      "app/(auth)/reset-password/page.tsx",
       "app/(saas)/app/page.tsx",
       "app/(saas)/app/products/page.tsx",
       "app/(saas)/app/orders/page.tsx",
@@ -30,6 +31,7 @@ describe("SaaS architecture boundaries", () => {
       "app/(saas)/app/settings/page.tsx",
       "app/(saas)/app/billing/page.tsx",
       "app/(saas)/app/help/page.tsx",
+      "app/(saas)/workspace/setup/page.tsx",
       "app/ledger/page.tsx",
     ];
     await Promise.all(
@@ -60,8 +62,10 @@ describe("SaaS architecture boundaries", () => {
     expect(proxy).toContain("pricing(?:/|$)");
     expect(proxy).toContain("etsy-kar-hesaplama(?:/|$)");
     expect(proxy).toContain("forgot-password(?:/|$)");
+    expect(proxy).toContain("reset-password(?:/|$)");
     expect(proxy).not.toContain("app(?:/|$)");
-    expect(proxy).toContain('pages: { signIn: "/login" }');
+    expect(proxy).toContain('new URL("/login", request.url)');
+    expect(proxy).toContain("getSessionCookie");
   });
 
   it("enforces the incremental Prisma repository boundary", async () => {
@@ -88,5 +92,22 @@ describe("SaaS architecture boundaries", () => {
     }
     expect(architecture).toContain("Never use `prisma db push`");
     expect(architecture).toContain("temporary compatibility re-export");
+  });
+
+  it("keeps the Prompt 2 migration additive", async () => {
+    const migration = await source(
+      "prisma/migrations/20260803120000_better_auth_workspace_tenancy/migration.sql",
+    );
+    expect(migration).not.toMatch(/^\s*(?:DROP|TRUNCATE|DELETE\s+FROM|UPDATE\s+)/im);
+    expect(migration).toContain('CREATE TABLE "user"');
+    expect(migration).toContain('CREATE TABLE "Workspace"');
+    expect(migration).toContain('CREATE TABLE "Membership"');
+  });
+
+  it("uses Better Auth as the only public authentication handler", async () => {
+    const handler = await source("app/api/auth/[...nextauth]/route.ts");
+    expect(handler).toContain("toNextJsHandler(auth)");
+    expect(handler).not.toContain("NextAuth");
+    expect(await source("package.json")).not.toContain('"next-auth"');
   });
 });

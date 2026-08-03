@@ -1,23 +1,33 @@
 import "server-only";
-import { getServerSession } from "next-auth";
-import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth/options";
+import {
+  FounderAuthorizationError,
+  getAuthenticatedUser,
+  requireFounder,
+} from "@/lib/server/auth/workspace-context";
+import { findAuthUserById } from "@/lib/server/repositories/auth-repository";
 
 export async function getAdminSession() {
-  const session = await getServerSession(authOptions);
-  return session?.user?.role === "ADMIN" ? session : null;
+  const sessionUser = await getAuthenticatedUser();
+  if (!sessionUser) return null;
+  const user = await findAuthUserById(sessionUser.id);
+  return user?.systemRole === "FOUNDER" ? { user: sessionUser } : null;
 }
 
 export async function requireAdmin(options?: { redirectTo?: string; api?: false }) {
-  const session = await getAdminSession();
-  if (!session) redirect(`/login?callbackUrl=${encodeURIComponent(options?.redirectTo || "/")}`);
-  return session;
+  const user = await requireFounder({ redirectTo: options?.redirectTo });
+  return { user };
 }
 
 export async function requireAdminApi() {
-  const session = await getAdminSession();
-  if (!session) throw new AdminAuthorizationError();
-  return session;
+  try {
+    const user = await requireFounder({ api: true });
+    return { user };
+  } catch (error) {
+    if (error instanceof FounderAuthorizationError) {
+      throw new AdminAuthorizationError();
+    }
+    throw error;
+  }
 }
 
 export class AdminAuthorizationError extends Error {

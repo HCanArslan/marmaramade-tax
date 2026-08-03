@@ -1,11 +1,11 @@
 import { SaasShell } from "@/components/saas/saas-shell";
-import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireWorkspaceContext } from "@/lib/server/auth/workspace-context";
 
 export default async function ProtectedSaasLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  await requireAdmin({ redirectTo: "/app" });
+  await requireWorkspaceContext();
   return <SaasShell>{children}</SaasShell>;
 }

@@ -22,6 +22,7 @@ import {
   type SaasLocale,
 } from "@/lib/i18n/saas";
 import { saasNavigation } from "@/lib/saas/navigation";
+import { LogoutButton } from "@/components/logout-button";
 
 const icons: Record<
   (typeof saasNavigation)[number]["key"],
@@ -65,6 +66,9 @@ export function SaasShell({ children }: { children: React.ReactNode }) {
               </span>
             </span>
           </Link>
+          <div className="text-stone-900 lg:hidden">
+            <LogoutButton />
+          </div>
           <p className="mt-4 hidden text-[11px] text-white/45 lg:block">
             {messages.shell.protectedWorkspace}
           </p>
@@ -117,6 +121,7 @@ export function SaasShell({ children }: { children: React.ReactNode }) {
               </button>
             ))}
           </div>
+          <div className="mt-3 text-stone-900"><LogoutButton /></div>
         </div>
       </aside>
       <main className="min-w-0 px-4 pb-20 pt-6 sm:px-7 lg:px-10 lg:py-9">

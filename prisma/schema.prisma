@@ -7,6 +7,173 @@ datasource db {
   provider = "postgresql"
 }
 
+enum SystemRole {
+  USER
+  FOUNDER
+}
+
+enum WorkspaceRole {
+  OWNER
+  MEMBER
+}
+
+enum WorkspaceStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+model User {
+  id               String            @id @default(cuid())
+  name             String
+  email            String            @unique
+  emailVerified    Boolean           @default(false)
+  image            String?
+  systemRole       SystemRole        @default(USER)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  sessions         Session[]
+  accounts         Account[]
+  memberships      Membership[]
+  preference       UserPreference?
+  legalAcceptances LegalAcceptance[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+model RateLimit {
+  id          String @id @default(cuid())
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+
+  @@map("rateLimit")
+}
+
+model Workspace {
+  id                    String                      @id @default(cuid())
+  name                  String
+  slug                  String                      @unique
+  status                WorkspaceStatus             @default(ACTIVE)
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+  memberships           Membership[]
+  activeUserPreferences UserPreference[]            @relation("ActiveWorkspace")
+  legalAcceptances      LegalAcceptance[]
+  legacyAssignments     LegacyWorkspaceAssignment[]
+}
+
+model Membership {
+  id          String        @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(MEMBER)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+model UserPreference {
+  id                String     @id @default(cuid())
+  userId            String     @unique
+  activeWorkspaceId String?
+  locale            String     @default("tr")
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeWorkspace   Workspace? @relation("ActiveWorkspace", fields: [activeWorkspaceId], references: [id], onDelete: SetNull)
+
+  @@index([activeWorkspaceId])
+}
+
+model LegalAcceptance {
+  id          String     @id @default(cuid())
+  userId      String
+  workspaceId String?
+  document    String
+  version     String
+  acceptedAt  DateTime   @default(now())
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, document, version])
+  @@index([workspaceId])
+}
+
+model LegacyWorkspaceAssignment {
+  id          String    @id @default(cuid())
+  sourceKey   String    @unique
+  workspaceId String
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId])
+}
+
+model AuthSecurityEvent {
+  id        String   @id @default(cuid())
+  userId    String?
+  eventType String
+  success   Boolean
+  emailHash String?
+  ipHash    String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([eventType, createdAt])
+}
+
 model Product {
   id                 String                   @id @default(cuid())
   sku                String                   @unique

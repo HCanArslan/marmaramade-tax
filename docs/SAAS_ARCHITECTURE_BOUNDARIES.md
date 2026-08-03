@@ -1,7 +1,7 @@
 # MarmaraLedge SaaS architecture boundaries
 
-Status: Prompt 1 foundation. These boundaries apply until a later reviewed
-phase replaces them.
+Status: Prompt 2 identity and tenancy foundation. These boundaries apply until
+a later reviewed phase replaces them.
 
 ## Route boundaries
 
@@ -9,9 +9,8 @@ Next.js route groups separate layouts without changing public URLs:
 
 - `app/(public)` owns `/`, `/pricing`, `/etsy-kar-hesaplama`, and `/blog`.
   These routes never load the private Ledger shell or private records.
-- `app/(auth)` owns `/login`, `/signup`, and `/forgot-password`. Only the
-  existing single-admin login is functional. Signup and password reset are
-  explicit placeholders until the authentication phase.
+- `app/(auth)` owns `/login`, `/signup`, `/forgot-password`, and
+  `/reset-password`. Better Auth is the only production authentication system.
 - `app/(saas)/app` owns the protected `/app/**` foundation. Its navigation is
   limited to Dashboard, Products, Orders, Profit, Pricing, Scenarios, Reports,
   Settings, Billing, and Help.
@@ -19,7 +18,9 @@ Next.js route groups separate layouts without changing public URLs:
   legacy `AppShell`. They are excluded from the SaaS navigation. The former
   private root dashboard is retained at `/ledger` because `/` is now public.
 
-The root proxy keeps `/app/**` and every retained legacy route authenticated.
+The root proxy performs an optimistic Better Auth cookie check. `/app/**`
+performs definitive session, active-workspace, and membership checks. Retained
+legacy routes additionally require the database-backed `FOUNDER` system role.
 Only the public and authentication foundations, existing authentication APIs,
 approved webhooks/callbacks, and health endpoint are excluded from the matcher.
 
@@ -61,13 +62,42 @@ may only shrink. `npm run guard:prisma-boundary`, also included in `npm run
 lint`, rejects new compatibility imports, new direct client imports, stale
 allowlist entries, and arbitrary generated Prisma imports.
 
+## Authentication and tenant context
+
+- Better Auth 1.6.25 owns `User`, `Session`, `Account`, `Verification`, and
+  `RateLimit`. Physical core table names follow its generated Prisma mapping.
+- The MarmaraLedge domain owns `Workspace`, `Membership`, `UserPreference`,
+  `LegalAcceptance`, and `LegacyWorkspaceAssignment`; Better Auth organizations
+  are not used as tenants.
+- `UserPreference.activeWorkspaceId` is trusted only after membership and
+  active-workspace validation. A requested browser workspace ID is never used
+  without the same validation.
+- Users without memberships go to `/workspace/setup`; users with multiple
+  memberships and no valid selection go to `/workspace/select`.
+- Workspace roles are `OWNER` and `MEMBER`. Founder/private-Ledger access is a
+  separate `SystemRole.FOUNDER`, never inferred from workspace ownership.
+- `requireUser`, `requireWorkspaceContext`, `requireWorkspaceMembership`,
+  `requireWorkspaceRole`, and the founder compatibility helper are server-only.
+
+Email verification and reset records expire after one hour. Development can
+enable an in-memory, non-logging capture with `AUTH_DEV_EMAIL_CAPTURE=true`.
+Production capture is prohibited; a transactional email adapter remains a
+deployment blocker until the later email phase.
+
+The founder bootstrap is environment-driven and idempotent. Better Auth creates
+and hashes the credential account, then one transaction creates or reuses the
+founder workspace, OWNER membership, preference, and the
+`MARMARAMADE_LEDGER` legacy assignment. Migration SQL contains no identity,
+password, or password hash.
+
 ## Retained, transformed, and excluded surfaces
 
 Retained unchanged:
 
 - Prisma schema, migration history, models, and historical records;
 - existing private ERP pages, actions, APIs, and integrations;
-- NextAuth v4 single-admin behavior until Prompt 2;
+- historical login-attempt/security records, but not the old public NextAuth
+  credentials handler;
 - Etsy OAuth/webhook/read-only safeguards and GET-only marketplace client;
 - financial engine modules and calculation parity fixtures.
 
@@ -75,7 +105,7 @@ Transformed reversibly:
 
 - `/` changes from the private dashboard to the public shell;
 - the private dashboard moves to `/ledger`;
-- `/login` moves into an auth route group without changing its URL;
+- `/login`, signup, verification, reset, and logout use Better Auth;
 - root shell selection delegates public/auth/SaaS routes to dedicated layouts;
 - Prisma construction moves from `lib/prisma.ts` to `lib/server/db/client.ts`;
 - `/api/health` demonstrates repository-backed access.
@@ -103,7 +133,8 @@ Excluded from the new SaaS navigation, but not deleted:
 1. Do not create `src/`; use the current root project structure.
 2. Do not add a new direct Prisma import. Add or extend a repository instead.
 3. Do not remove a legacy allowlist entry until its caller uses a repository.
-4. Do not add tenancy columns or Better Auth before Prompt 2 review.
+4. Do not tenant-convert legacy domain tables until the reviewed Prompt 3
+   migration; use the Prompt 2 workspace boundary for new code.
 5. Do not generalize USD/TRY formulas before the dedicated currency phase.
 6. Do not expose retained private ERP routes in public or SaaS navigation.
 7. Run lint, type checking, all tests, Prisma validation, Etsy guard, build,

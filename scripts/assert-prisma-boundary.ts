@@ -128,6 +128,7 @@ export async function validatePrismaBoundary(root = process.cwd()) {
       if (
         importsDbClient &&
         relative !== "lib/prisma.ts" &&
+        !relative.startsWith("lib/server/db/") &&
         !relative.startsWith("lib/server/repositories/")
       ) {
         violations.push(

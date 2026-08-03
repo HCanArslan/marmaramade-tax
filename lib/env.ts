@@ -23,6 +23,10 @@ const optionalEmail = z.preprocess(
   cleanEnvironmentValue,
   z.string().email().optional(),
 );
+const optionalUrl = z.preprocess(
+  cleanEnvironmentValue,
+  z.string().url().optional(),
+);
 const optionalNumber = (schema: z.ZodNumber, fallback: number) =>
   z.preprocess(
     cleanEnvironmentValue,
@@ -42,6 +46,21 @@ const serverEnvSchema = z.object({
   AUTH_SESSION_MAX_AGE_HOURS: optionalNumber(
     z.number().int().min(1).max(24),
     8,
+  ),
+  BETTER_AUTH_SECRET: optionalSecret,
+  BETTER_AUTH_URL: optionalUrl,
+  NEXTAUTH_URL: optionalUrl,
+  BETTER_AUTH_TRUSTED_ORIGINS: optionalSecret,
+  GOOGLE_CLIENT_ID: optionalSecret,
+  GOOGLE_CLIENT_SECRET: optionalSecret,
+  FOUNDER_EMAIL: optionalEmail,
+  FOUNDER_NAME: optionalSecret,
+  FOUNDER_WORKSPACE_NAME: optionalSecret,
+  FOUNDER_WORKSPACE_SLUG: optionalSecret,
+  FOUNDER_BOOTSTRAP_PASSWORD: optionalSecret,
+  AUTH_DEV_EMAIL_CAPTURE: z.preprocess(
+    (value) => String(cleanEnvironmentValue(value) ?? "false").toLowerCase(),
+    z.enum(["true", "false"]).transform((value) => value === "true"),
   ),
   TOKEN_ENCRYPTION_KEY: optionalSecret,
   ETSY_API_KEYSTRING: optionalSecret,
@@ -121,6 +140,53 @@ export function requireAuthSecrets() {
     AUTH_SECRET: string;
     ADMIN_EMAIL: string;
     ADMIN_PASSWORD_HASH: string;
+  };
+}
+
+export function requireBetterAuthConfig() {
+  const env = getServerEnv();
+  const secret = env.BETTER_AUTH_SECRET ?? env.AUTH_SECRET;
+  const baseURL =
+    env.BETTER_AUTH_URL ??
+    env.NEXTAUTH_URL ??
+    (process.env.NODE_ENV === "production" ? undefined : "http://localhost:3000");
+  if (!secret || secret.length < 32 || !baseURL) {
+    throw new Error("Better Auth is not configured.");
+  }
+  if (!!env.GOOGLE_CLIENT_ID !== !!env.GOOGLE_CLIENT_SECRET) {
+    throw new Error("Google authentication configuration is incomplete.");
+  }
+  const baseOrigin = new URL(baseURL).origin;
+  const trustedOrigins = [
+    baseOrigin,
+    ...(env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map((value) => new URL(value).origin),
+  ];
+  if (
+    process.env.NODE_ENV === "production" &&
+    trustedOrigins.some((origin) => {
+      const url = new URL(origin);
+      const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+      return url.protocol !== "https:" && !loopback;
+    })
+  ) {
+    throw new Error("Production authentication origins must use HTTPS.");
+  }
+  return {
+    secret,
+    baseURL,
+    trustedOrigins: [...new Set(trustedOrigins)],
+    google:
+      env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+        ? {
+            clientId: env.GOOGLE_CLIENT_ID,
+            clientSecret: env.GOOGLE_CLIENT_SECRET,
+          }
+        : undefined,
+    developmentEmailCapture: env.AUTH_DEV_EMAIL_CAPTURE,
   };
 }
 

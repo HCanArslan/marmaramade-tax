@@ -32,7 +32,7 @@ import { resolveListingPricing } from "@/lib/etsy/pricing";
 const root = process.cwd();
 const source = (file: string) => readFile(path.join(root, file), "utf8");
 
-describe("single-admin security", () => {
+describe("retained legacy login security utilities", () => {
   it("accepts a valid admin login decision", () =>
     expect(
       decideLogin({
@@ -123,7 +123,10 @@ describe("single-admin security", () => {
   it("contains no plaintext admin password in tracked configuration", async () => {
     const env = await source(".env.example");
     expect(env).toContain("ADMIN_PASSWORD_HASH=");
+    expect(env).toContain("BETTER_AUTH_SECRET=");
+    expect(env).toContain("FOUNDER_BOOTSTRAP_PASSWORD=");
     expect(env).not.toMatch(/ADMIN_PASSWORD=(?!_HASH)/);
+    expect(env).not.toMatch(/FOUNDER_BOOTSTRAP_PASSWORD=".+"/);
   });
 });
 

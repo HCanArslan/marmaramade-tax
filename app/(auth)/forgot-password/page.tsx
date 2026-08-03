@@ -1,10 +1,6 @@
-import { AuthPlaceholder } from "@/components/saas/auth-placeholder";
+import { AuthCard } from "@/components/auth/auth-card";
+import { ForgotPasswordForm } from "@/components/auth/account-forms";
 
 export default function ForgotPasswordFoundationPage() {
-  return (
-    <AuthPlaceholder
-      title="Reset password"
-      description="Password-reset delivery and account lifecycle behavior are reserved for the authentication phase."
-    />
-  );
+  return <AuthCard eyebrow="Account recovery" title="Reset your password" description="The response does not reveal whether an account exists."><ForgotPasswordForm/></AuthCard>;
 }
