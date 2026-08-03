@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { checkDatabaseConnection } from "@/lib/server/repositories/health-repository";
 export const dynamic = "force-dynamic";
 export async function GET() {
   try {
-    await prisma.$queryRaw`SELECT 1`;
+    await checkDatabaseConnection();
     return NextResponse.json({ status: "ok", service: "marmaramade-ledger", database: "ok" }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ status: "error", service: "marmaramade-ledger", database: "unavailable" }, { status: 503, headers: { "Cache-Control": "no-store" } });

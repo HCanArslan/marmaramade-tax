@@ -18,7 +18,7 @@ import { formatMoney } from "@/lib/domain/money";
 import { prisma } from "@/lib/prisma";
 
 export default async function Dashboard() {
-  await requireAdmin({ redirectTo: "/" });
+  await requireAdmin({ redirectTo: "/ledger" });
   const now = new Date();
   const monthStart = new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),

@@ -61,7 +61,7 @@ export function Sidebar() {
   return (
     <aside className="border-b border-stone-200 bg-[#18342e] text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0 lg:border-r lg:border-white/10">
       <div className="flex shrink-0 items-center justify-between px-4 py-4 lg:block lg:px-5 lg:pb-3 lg:pt-5">
-        <Link href="/" className="flex items-center gap-3">
+        <Link href="/ledger" className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#dbe8b6] text-[#18342e]">
             <BarChart3 size={20} />
           </span>
@@ -83,7 +83,7 @@ export function Sidebar() {
         className="flex gap-1 overflow-x-auto px-3 pb-3 lg:hidden"
         aria-label={tr.shell.mainNavigation}
       >
-        <MobileLink href="/" label={tr.shell.dashboard} pathname={pathname} />
+        <MobileLink href="/ledger" label={tr.shell.dashboard} pathname={pathname} />
         {groups.map((group) => (
           <MobileLink
             href={group.href}
@@ -99,10 +99,10 @@ export function Sidebar() {
         aria-label={tr.shell.mainNavigation}
       >
         <Link
-          href="/"
+          href="/ledger"
           className={cn(
             "mb-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition",
-            pathname === "/"
+            pathname === "/ledger"
               ? "bg-white text-[#18342e] shadow-sm"
               : "text-white/70 hover:bg-white/8 hover:text-white",
           )}

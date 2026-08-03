@@ -15,7 +15,7 @@
     "dev": "next dev",
     "build": "tsx scripts/vercel-build.ts",
     "start": "next start",
-    "lint": "eslint .",
+    "lint": "eslint . && npm run guard:prisma-boundary",
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write .",
@@ -26,6 +26,7 @@
     "db:studio": "prisma studio",
     "db:validate": "prisma validate",
     "auth:hash-password": "tsx scripts/hash-password.ts",
+    "guard:prisma-boundary": "tsx scripts/assert-prisma-boundary.ts",
     "guard:etsy-readonly": "tsx scripts/assert-etsy-readonly.ts"
   },
   "dependencies": {

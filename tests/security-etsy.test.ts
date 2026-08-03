@@ -82,7 +82,7 @@ describe("single-admin security", () => {
     ).toBe("SUCCESS"));
   it("protects every financial page server-side", async () => {
     const files = [
-      "app/page.tsx",
+      "app/ledger/page.tsx",
       "app/products/page.tsx",
       "app/calculator/page.tsx",
       "app/orders/page.tsx",

@@ -4,8 +4,8 @@ import { AppShell } from "@/components/app-shell";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export const metadata: Metadata = {
-  title: "MarmaraMade Ledger",
-  description: "Etsy kârlılık, DDP kargo ve gümrük kayıt sistemi",
+  title: "MarmaraLedge",
+  description: "Etsy kârlılık ve fiyatlandırma çalışma alanı",
 };
 
 export default function RootLayout({

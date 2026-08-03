@@ -60,7 +60,7 @@ describe("planning usability", () => {
   it("does not erase saved costs or show hard-coded dashboard examples", async () => {
     const [calculator, dashboard, defaults] = await Promise.all([
       source("components/calculator-workspace.tsx"),
-      source("app/page.tsx"),
+      source("app/ledger/page.tsx"),
       source("lib/domain/defaults.ts"),
     ]);
     expect(calculator).not.toContain("withoutIgnoredCosts");

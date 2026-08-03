@@ -14,6 +14,6 @@ export default withAuth({
 
 export const config = {
   matcher: [
-    "/((?!login|api/auth|api/cron|api/etsy/oauth/callback|api/etsy/webhook|api/health|_next/static|_next/image|favicon.ico|icon.svg).*)",
+    "/((?!$|pricing(?:/|$)|etsy-kar-hesaplama(?:/|$)|blog(?:/|$)|login(?:/|$)|signup(?:/|$)|forgot-password(?:/|$)|api/auth|api/cron|api/etsy/oauth/callback|api/etsy/webhook|api/health|_next/static|_next/image|favicon.ico|icon.svg).*)",
   ],
 };
