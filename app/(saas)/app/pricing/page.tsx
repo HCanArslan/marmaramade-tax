@@ -1,5 +1,8 @@
-import { SaasPlaceholderPage } from "@/components/saas/placeholder-page";
+import Link from "next/link";
+import { requireWorkspaceContext } from "@/lib/server/auth/workspace-context";
+import { loadProfitability } from "@/lib/server/services/profitability-service";
 
-export default function SaasPricingPage() {
-  return <SaasPlaceholderPage title="Pricing" description="Product price recommendations and simulations are deferred while the existing Decimal-safe engine remains frozen." />;
+export default async function SaasPricingPage() {
+  const view=await loadProfitability(await requireWorkspaceContext());
+  return <div className="mx-auto max-w-6xl space-y-6"><header><p className="eyebrow">Price recommendations</p><h1 className="mt-2 text-3xl font-semibold">Sürdürülebilir fiyatlar</h1><p className="mt-2 text-sm text-stone-600">Öneriler mevcut ürün girdileriyle Decimal çözücü kullanır ve Etsy’ye hiçbir fiyat yazmaz.</p></header><div className="overflow-hidden rounded-2xl border bg-white"><div className="hidden grid-cols-[minmax(0,2fr)_repeat(4,1fr)] gap-3 border-b bg-stone-50 px-4 py-3 text-xs text-stone-500 md:grid"><span>Ürün</span><span>Mevcut</span><span>Başabaş</span><span>Hedef marj</span><span>Önerilen</span></div>{view.products.map(({product,calculation,inputs})=>{const r=calculation.recommendations;return <Link className="grid gap-2 border-b px-4 py-4 last:border-0 md:grid-cols-[minmax(0,2fr)_repeat(4,1fr)]" href={`/app/products/${product.id}`} key={product.id}><strong className="truncate text-sm">{product.title}</strong>{r?<><span>{r.currentPrice.toString()} {inputs.marketplaceCurrency}</span><span>{r.breakEvenPrice?.toString()??"—"}</span><span>{r.targetMarginPrice?.toString()??"—"}</span><span>{r.recommendedPrice.toString()}</span></>:<span className="text-sm text-amber-700 md:col-span-4">Eksik: {calculation.missingFields.join(", ")}</span>}</Link>})}</div></div>;
 }

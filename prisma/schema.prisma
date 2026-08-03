@@ -74,6 +74,13 @@ enum OnboardingStatus {
   SKIPPED
 }
 
+enum ProfitCalculationStatus {
+  COMPLETE
+  ESTIMATED
+  INCOMPLETE
+  NEEDS_REVIEW
+}
+
 model User {
   id               String            @id @default(cuid())
   name             String
@@ -151,49 +158,52 @@ model RateLimit {
 }
 
 model Workspace {
-  id                    String                        @id @default(cuid())
-  name                  String
-  slug                  String                        @unique
-  status                WorkspaceStatus               @default(ACTIVE)
-  createdAt             DateTime                      @default(now())
-  updatedAt             DateTime                      @updatedAt
-  memberships           Membership[]
-  activeUserPreferences UserPreference[]              @relation("ActiveWorkspace")
-  legalAcceptances      LegalAcceptance[]
-  legacyAssignments     LegacyWorkspaceAssignment[]
-  products              Product[]
-  productCostVersions   ProductCostVersion[]
-  productMaterialCosts  ProductMaterialCost[]
-  packageProfiles       PackageProfile[]
-  feeProfiles           FeeProfile[]
-  exchangeRates         ExchangeRateSnapshot[]
-  orders                Order[]
-  orderItems            OrderItem[]
-  orderCostSnapshots    OrderCostSnapshot[]
-  orderCostLines        OrderCostLine[]
-  orderAdjustments      OrderAdjustment[]
-  legacyScenarios       Scenario[]
-  shops                 Shop[]
-  etsyConnections       EtsyConnection[]
-  etsyOAuthStates       EtsyOAuthState[]
-  etsySyncRuns          EtsySyncRun[]
-  etsySyncErrors        EtsySyncError[]
-  etsyListings          EtsyListing[]
-  etsyListingImages     EtsyListingImage[]
-  etsyListingLinks      EtsyListingProductLink[]
-  etsyReceipts          EtsyReceipt[]
-  etsyReceiptItems      EtsyReceiptItem[]
-  etsyPayments          EtsyPayment[]
-  etsyLedgerEntries     EtsyLedgerEntry[]
-  etsyWebhookEvents     EtsyWebhookEvent[]
-  etsyImportMappings    EtsyImportMapping[]
-  settings              WorkspaceSetting[]
-  businessProfiles      WorkspaceBusinessProfile[]
-  costDefaultVersions   WorkspaceCostDefaultVersion[]
-  portfolioScenarios    PortfolioScenario[]
-  portfolioVersions     PortfolioScenarioVersion[]
-  onboarding            WorkspaceOnboarding?
+  id                         String                            @id @default(cuid())
+  name                       String
+  slug                       String                            @unique
+  status                     WorkspaceStatus                   @default(ACTIVE)
+  createdAt                  DateTime                          @default(now())
+  updatedAt                  DateTime                          @updatedAt
+  memberships                Membership[]
+  activeUserPreferences      UserPreference[]                  @relation("ActiveWorkspace")
+  legalAcceptances           LegalAcceptance[]
+  legacyAssignments          LegacyWorkspaceAssignment[]
+  products                   Product[]
+  productCostVersions        ProductCostVersion[]
+  productMaterialCosts       ProductMaterialCost[]
+  packageProfiles            PackageProfile[]
+  feeProfiles                FeeProfile[]
+  exchangeRates              ExchangeRateSnapshot[]
+  orders                     Order[]
+  orderItems                 OrderItem[]
+  orderCostSnapshots         OrderCostSnapshot[]
+  orderCostLines             OrderCostLine[]
+  orderAdjustments           OrderAdjustment[]
+  legacyScenarios            Scenario[]
+  shops                      Shop[]
+  etsyConnections            EtsyConnection[]
+  etsyOAuthStates            EtsyOAuthState[]
+  etsySyncRuns               EtsySyncRun[]
+  etsySyncErrors             EtsySyncError[]
+  etsyListings               EtsyListing[]
+  etsyListingImages          EtsyListingImage[]
+  etsyListingLinks           EtsyListingProductLink[]
+  etsyReceipts               EtsyReceipt[]
+  etsyReceiptItems           EtsyReceiptItem[]
+  etsyPayments               EtsyPayment[]
+  etsyLedgerEntries          EtsyLedgerEntry[]
+  etsyWebhookEvents          EtsyWebhookEvent[]
+  etsyImportMappings         EtsyImportMapping[]
+  settings                   WorkspaceSetting[]
+  businessProfiles           WorkspaceBusinessProfile[]
+  costDefaultVersions        WorkspaceCostDefaultVersion[]
+  portfolioScenarios         PortfolioScenario[]
+  portfolioVersions          PortfolioScenarioVersion[]
+  onboarding                 WorkspaceOnboarding?
   productDefaultApplications ProductCostDefaultApplication[]
+  shippingDefaultVersions    WorkspaceShippingDefaultVersion[]
+  productShippingOverrides   ProductShippingOverrideVersion[]
+  productProfitSnapshots     ProductProfitSnapshot[]
 }
 
 model Shop {
@@ -292,7 +302,7 @@ model AuthSecurityEvent {
 }
 
 model Product {
-  id                 String                   @id @default(cuid())
+  id                 String                           @id @default(cuid())
   workspaceId        String?
   sku                String
   title              String
@@ -305,15 +315,15 @@ model Product {
   productWeightGrams Decimal?
   primaryColor       String?
   secondaryColor     String?
-  lining             Boolean                  @default(false)
-  interiorPocket     Boolean                  @default(false)
+  lining             Boolean                          @default(false)
+  interiorPocket     Boolean                          @default(false)
   closureType        String?
   baseType           String?
-  oneOfOne           Boolean                  @default(true)
-  active             Boolean                  @default(true)
+  oneOfOne           Boolean                          @default(true)
+  active             Boolean                          @default(true)
   notes              String?
-  createdAt          DateTime                 @default(now())
-  updatedAt          DateTime                 @updatedAt
+  createdAt          DateTime                         @default(now())
+  updatedAt          DateTime                         @updatedAt
   costVersions       ProductCostVersion[]
   orderItems         OrderItem[]
   etsyListingLinks   EtsyListingProductLink[]
@@ -326,9 +336,11 @@ model Product {
   tariffVersions     TariffVersion[]
   etgbCostRecords    EtgbCostRecord[]
   microExportCases   MicroExportCase[]
-  workspace          Workspace?               @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  workspace          Workspace?                       @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   portfolioItems     PortfolioScenarioItem[]
   onboardingDefaults ProductCostDefaultApplication?
+  shippingOverrides  ProductShippingOverrideVersion[]
+  profitSnapshots    ProductProfitSnapshot[]
 
   @@unique([workspaceId, sku])
   @@index([workspaceId, active])
@@ -785,20 +797,20 @@ model WorkspaceBusinessProfileVersion {
 }
 
 model WorkspaceCostDefaultVersion {
-  id                        String                     @id @default(cuid())
+  id                        String                          @id @default(cuid())
   workspaceId               String
   versionNumber             Int
   effectiveFrom             DateTime
   effectiveTo               DateTime?
   activeKey                 String?
-  hourlyLabourValue         Decimal                    @default(0)
-  packagingCost             Decimal                    @default(0)
-  materialWastagePercentage Decimal                    @default(0)
-  returnReservePercentage   Decimal                    @default(0)
-  damageReservePercentage   Decimal                    @default(0)
-  fxLossReservePercentage   Decimal                    @default(0)
-  monthlyOverhead           Decimal                    @default(0)
-  exportHandlingCost        Decimal                    @default(0)
+  hourlyLabourValue         Decimal                         @default(0)
+  packagingCost             Decimal                         @default(0)
+  materialWastagePercentage Decimal                         @default(0)
+  returnReservePercentage   Decimal                         @default(0)
+  damageReservePercentage   Decimal                         @default(0)
+  fxLossReservePercentage   Decimal                         @default(0)
+  monthlyOverhead           Decimal                         @default(0)
+  exportHandlingCost        Decimal                         @default(0)
   costCurrency              String
   sellerCountry             String
   originCountry             String
@@ -808,11 +820,11 @@ model WorkspaceCostDefaultVersion {
   defaultShippingCost       Decimal?
   defaultShippingCurrency   String?
   customsResponsibility     String?
-  marketplaceCurrency      String?
-  sourceLabel              String?
-  monthlyOverheadKnown     Boolean                    @default(false)
-  createdAt                 DateTime                   @default(now())
-  workspace                 Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  marketplaceCurrency       String?
+  sourceLabel               String?
+  monthlyOverheadKnown      Boolean                         @default(false)
+  createdAt                 DateTime                        @default(now())
+  workspace                 Workspace                       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   portfolioVersions         PortfolioScenarioVersion[]
   productApplications       ProductCostDefaultApplication[]
 
@@ -865,6 +877,102 @@ model ProductCostDefaultApplication {
   costDefaultVersion   WorkspaceCostDefaultVersion @relation(fields: [costDefaultVersionId], references: [id], onDelete: Restrict)
 
   @@index([workspaceId, costDefaultVersionId])
+}
+
+model WorkspaceShippingDefaultVersion {
+  id                    String    @id @default(cuid())
+  workspaceId           String
+  destinationCountry    String
+  versionNumber         Int
+  effectiveFrom         DateTime
+  effectiveTo           DateTime?
+  activeKey             String?
+  shippingCost          Decimal?
+  shippingCurrency      String
+  customsResponsibility String    @default("UNKNOWN")
+  sellerPaidCustomsCost Decimal?
+  customsCurrency       String?
+  targetMarginPercent   Decimal   @default(20)
+  source                String    @default("MANUAL_WORKSPACE_SETTING")
+  createdAt             DateTime  @default(now())
+  workspace             Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, destinationCountry, versionNumber])
+  @@unique([workspaceId, destinationCountry, activeKey], map: "WorkspaceShippingDefaultVersion_one_active_key")
+  @@index([workspaceId, destinationCountry, effectiveFrom, effectiveTo])
+}
+
+model ProductShippingOverrideVersion {
+  id                    String    @id @default(cuid())
+  workspaceId           String
+  productId             String
+  destinationCountry    String
+  versionNumber         Int
+  effectiveFrom         DateTime
+  effectiveTo           DateTime?
+  activeKey             String?
+  shippingCost          Decimal?
+  shippingCurrency      String
+  customsResponsibility String    @default("UNKNOWN")
+  sellerPaidCustomsCost Decimal?
+  customsCurrency       String?
+  source                String    @default("MANUAL_PRODUCT_OVERRIDE")
+  createdAt             DateTime  @default(now())
+  workspace             Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product               Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, destinationCountry, versionNumber])
+  @@unique([productId, destinationCountry, activeKey], map: "ProductShippingOverrideVersion_one_active_key")
+  @@index([workspaceId, destinationCountry, effectiveFrom, effectiveTo])
+}
+
+model ProductProfitSnapshot {
+  id                        String                  @id @default(cuid())
+  calculationKey            String?                 @unique
+  workspaceId               String
+  productId                 String
+  listingId                 String?
+  destinationCountry        String
+  quantity                  Decimal                 @default(1)
+  listingPrice              Decimal
+  listingCurrency           String
+  reportingCurrency         String
+  status                    ProfitCalculationStatus
+  completenessScore         Int
+  inputSnapshot             Json
+  resultSnapshot            Json
+  feeProfileId              String?
+  productCostVersionId      String?
+  costDefaultVersionId      String?
+  businessProfileVersionId  String?
+  exchangeRateSnapshotId    String?
+  shippingDefaultVersionId  String?
+  shippingOverrideVersionId String?
+  grossRevenue              Decimal?
+  etsyFees                  Decimal?
+  productCashCost           Decimal?
+  economicLabourCost        Decimal?
+  shippingCost              Decimal?
+  customsExposure           Decimal?
+  preTaxCashProfit          Decimal?
+  taxReserve                Decimal?
+  finalCashProfit           Decimal?
+  economicProfit            Decimal?
+  cashMarginPercent         Decimal?
+  economicMarginPercent     Decimal?
+  warnings                  Json
+  engineVersion             String                  @default("product-profit-v1")
+  supersedesSnapshotId      String?
+  calculatedAt              DateTime                @default(now())
+  workspace                 Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product                   Product                 @relation(fields: [productId], references: [id], onDelete: Restrict)
+  listing                   EtsyListing?            @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  supersedes                ProductProfitSnapshot?  @relation("ProductProfitSupersession", fields: [supersedesSnapshotId], references: [id], onDelete: Restrict)
+  supersededBy              ProductProfitSnapshot[] @relation("ProductProfitSupersession")
+
+  @@index([workspaceId, productId, calculatedAt])
+  @@index([workspaceId, status, calculatedAt])
+  @@index([listingId, calculatedAt])
 }
 
 model PortfolioScenario {
@@ -1365,6 +1473,7 @@ model EtsyListing {
   images                   EtsyListingImage[]
   productLink              EtsyListingProductLink?
   receiptItems             EtsyReceiptItem[]
+  profitSnapshots          ProductProfitSnapshot[]
   workspace                Workspace?              @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   shop                     Shop?                   @relation(fields: [shopId], references: [id], onDelete: Restrict)
 

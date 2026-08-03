@@ -1,5 +1,8 @@
-import { SaasPlaceholderPage } from "@/components/saas/placeholder-page";
+import Link from "next/link";
+import { requireWorkspaceContext } from "@/lib/server/auth/workspace-context";
+import { loadProfitability } from "@/lib/server/services/profitability-service";
 
-export default function SaasOrdersPage() {
-  return <SaasPlaceholderPage title="Orders" description="The future SaaS order surface is reserved without exposing or migrating private Ledger order history." />;
+export default async function SaasOrdersPage() {
+  const view=await loadProfitability(await requireWorkspaceContext());
+  return <div className="mx-auto max-w-6xl space-y-6"><header><p className="eyebrow">Orders</p><h1 className="mt-2 text-3xl font-semibold">Sipariş kârlılığı</h1><p className="mt-2 text-sm text-stone-600">Alıcı kişisel bilgileri gösterilmez. Gerçek ücret ve maliyet kanıtı geldikçe durum ilerler.</p></header>{view.orders.length===0?<section className="card p-8 text-center"><h2 className="font-semibold">Henüz içe aktarılmış yerel sipariş yok</h2><p className="mx-auto mt-2 max-w-xl text-sm text-stone-600">Etsy siparişleri içe aktarıldığında tahmini, kısmen doğrulanmış veya doğrulanmış kârlılık sonuçları burada görünür.</p></section>:<div className="overflow-hidden rounded-2xl border bg-white">{view.orders.map((order)=>{const snapshot=order.snapshots[0];const state=snapshot?(order.confirmedAt?"CONFIRMED":"PARTIALLY_CONFIRMED"):"ESTIMATED";return <Link className="grid gap-2 border-b px-4 py-4 last:border-0 md:grid-cols-5" href={`/app/orders/${order.id}`} key={order.id}><span className="font-medium">{order.orderNumber}</span><span className="text-sm">{order.orderDate.toLocaleDateString("tr-TR")}</span><span className="truncate text-sm">{order.items.map((item)=>item.product.title).join(", ")}</span><span className="text-sm">{snapshot?`${snapshot.estimatedProfitTry.toString()} TRY`:"—"}</span><span className="pill w-fit">{state}</span></Link>})}</div>}</div>;
 }

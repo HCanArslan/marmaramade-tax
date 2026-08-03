@@ -1,0 +1,10 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { requireWorkspaceContext } from "@/lib/server/auth/workspace-context";
+import { findOrderById } from "@/lib/server/repositories/order-repository";
+
+export default async function SaasOrderDetailPage({params}:{params:Promise<{id:string}>}){
+  const {id}=await params;const order=await findOrderById(await requireWorkspaceContext(),id);if(!order)notFound();const latest=order.snapshots[0];const state=latest?(order.confirmedAt?"CONFIRMED":"PARTIALLY_CONFIRMED"):"ESTIMATED";
+  return <div className="mx-auto max-w-5xl space-y-6"><header><Link href="/app/orders" className="text-sm underline">← Siparişler</Link><p className="eyebrow mt-4">Order profitability</p><h1 className="mt-2 text-3xl font-semibold">{order.orderNumber}</h1><p className="mt-2 text-sm text-stone-600">{order.orderDate.toLocaleString("tr-TR")} · {order.destinationCountry} · {state}</p></header>{latest?<><div className="grid gap-3 sm:grid-cols-3"><Metric label="Brüt gelir" value={`${latest.grossRevenueUsd} USD`}/><Metric label="Tahmini kâr" value={`${latest.estimatedProfitTry} TRY`}/><Metric label="Snapshot zamanı" value={latest.calculatedAt.toLocaleString("tr-TR")}/></div><section className="card p-5"><h2 className="font-semibold">Değişmez hesaplama satırları</h2><div className="mt-3 divide-y">{latest.lines.map((line)=><div className="grid gap-1 py-3 text-sm sm:grid-cols-4" key={line.id}><span>{line.formulaName}</span><span>{line.category}</span><span>{line.sourceAmount.toString()} {line.sourceCurrency}</span><span>{line.convertedAmountTry.toString()} TRY</span></div>)}</div></section></>:<section className="card p-5"><h2 className="font-semibold">Hesaplama henüz oluşturulmadı</h2><p className="mt-2 text-sm text-stone-600">Ürün eşlemesi, maliyet, kargo ve FX girdileri tamamlandığında sipariş hesaplanabilir.</p></section>}</div>;
+}
+function Metric({label,value}:{label:string;value:string}){return <div className="card p-5"><p className="text-xs text-stone-500">{label}</p><p className="mt-2 font-semibold">{value}</p></div>}

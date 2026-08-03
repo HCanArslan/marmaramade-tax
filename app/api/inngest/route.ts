@@ -3,12 +3,13 @@ import { serve } from "inngest/next";
 import { getBackgroundDeliveryConfig } from "@/lib/env";
 import { inngest } from "@/lib/inngest/client";
 import { etsyFunctions } from "@/lib/inngest/etsy-functions";
+import { workspaceProfitabilityFunction } from "@/lib/inngest/profitability-functions";
 
 export const maxDuration = 300;
 
 const handlers = serve({
   client: inngest,
-  functions: etsyFunctions,
+  functions: [...etsyFunctions, workspaceProfitabilityFunction],
   serveOrigin: getBackgroundDeliveryConfig().serveOrigin,
 });
 
