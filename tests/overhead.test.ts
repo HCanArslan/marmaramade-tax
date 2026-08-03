@@ -172,7 +172,8 @@ describe("annual business spending", () => {
       "Bu tutar aya, ürün sayısına veya beklenen satış",
     );
     expect(calculator).toContain("bölünmez. Plan sonucundan bir kez düşülür.");
-    expect(calculator).toContain(
+    const normalizedCalculator = calculator.replace(/\r\n/g, "\n");
+    expect(normalizedCalculator).toContain(
       "resolveAnnualPlanOverhead(\n      annualOverheadEvidence?.annualTotalTry ?? 0",
     );
     expect(calculator).not.toContain("fixedOverheadMode");
