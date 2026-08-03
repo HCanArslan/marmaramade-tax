@@ -2,6 +2,7 @@ import "server-only";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
+import { normalizePostgresSslMode } from "@/lib/database-url";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
@@ -9,7 +10,10 @@ function createPrismaClient() {
   // Prisma's adapter is created during module evaluation in builds and tests,
   // but it does not connect until a query runs. Runtime env validation still
   // rejects a missing DATABASE_URL before protected application work begins.
-  const connectionString = process.env.DATABASE_URL ?? "postgresql://invalid:invalid@127.0.0.1:1/invalid";
+  const connectionString = normalizePostgresSslMode(
+    process.env.DATABASE_URL ??
+      "postgresql://invalid:invalid@127.0.0.1:1/invalid",
+  );
   const adapter = new PrismaPg({
     connectionString,
     connectionTimeoutMillis: 5_000,

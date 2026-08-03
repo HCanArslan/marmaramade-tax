@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import pg from "pg";
+import { normalizePostgresSslMode } from "../lib/database-url";
 
 function run(command: string, args: string[]) {
   const result = spawnSync(command, args, {
@@ -10,11 +11,14 @@ function run(command: string, args: string[]) {
 }
 
 async function recoverProductLogisticsMigration() {
-  const databaseUrl =
+  const rawDatabaseUrl =
     process.env.DIRECT_URL ??
     process.env.DATABASE_URL_UNPOOLED ??
     process.env.POSTGRES_URL_NON_POOLING ??
     process.env.DATABASE_URL;
+  const databaseUrl = rawDatabaseUrl
+    ? normalizePostgresSslMode(rawDatabaseUrl)
+    : undefined;
   if (!databaseUrl) throw new Error("Production migration URL is missing");
 
   const client = new pg.Client({ connectionString: databaseUrl });

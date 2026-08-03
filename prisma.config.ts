@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
+import { normalizePostgresSslMode } from "./lib/database-url";
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
@@ -11,11 +12,12 @@ export default defineConfig({
     // Schema migrations require a direct PostgreSQL connection. Neon injects
     // DATABASE_URL_UNPOOLED (and its older POSTGRES_URL_NON_POOLING alias)
     // alongside the pooled DATABASE_URL used by the serverless application.
-    url:
+    url: normalizePostgresSslMode(
       process.env.DIRECT_URL ??
       process.env.DATABASE_URL_UNPOOLED ??
       process.env.POSTGRES_URL_NON_POOLING ??
       process.env.DATABASE_URL ??
       "",
+    ),
   },
 });
