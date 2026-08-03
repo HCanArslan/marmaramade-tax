@@ -9,6 +9,7 @@ describe("Prompt 6 core-app contracts",()=>{
     const pages=await Promise.all([source("app/(saas)/app/page.tsx"),source("app/(saas)/app/products/page.tsx"),source("app/(saas)/app/orders/page.tsx"),source("app/(saas)/app/pricing/page.tsx")]);
     for(const page of pages)expect(page).not.toContain("SaasPlaceholderPage");
     expect(pages[0]).toContain("Eksik ürünler sıfır kâr gibi gösterilmez");
+    expect(pages[0]).toContain("hasCalculatedProducts ? view.portfolio.cashProfit : null");
     expect(pages[1]).toContain("/app/products/${product.id}");
   });
 
