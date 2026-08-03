@@ -1,7 +1,15 @@
 import { getSessionCookie } from "better-auth/cookies";
 import { NextRequest, NextResponse } from "next/server";
 
+export function isInngestInfrastructurePath(pathname: string) {
+  return pathname === "/api/inngest" || pathname.startsWith("/api/inngest/");
+}
+
 export function proxy(request: NextRequest) {
+  if (isInngestInfrastructurePath(request.nextUrl.pathname)) {
+    return NextResponse.next();
+  }
+
   const sessionCookie = getSessionCookie(request, {
     cookiePrefix: "marmaraledge",
   });
@@ -18,6 +26,6 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!$|pricing(?:/|$)|etsy-kar-hesaplama(?:/|$)|blog(?:/|$)|login(?:/|$)|signup(?:/|$)|forgot-password(?:/|$)|reset-password(?:/|$)|api/auth|api/cron|api/etsy/oauth/callback|api/etsy/webhook|api/health|_next/static|_next/image|favicon.ico|icon.svg).*)",
+    "/((?!$|pricing(?:/|$)|etsy-kar-hesaplama(?:/|$)|blog(?:/|$)|login(?:/|$)|signup(?:/|$)|forgot-password(?:/|$)|reset-password(?:/|$)|api/auth|api/cron|api/etsy/oauth/callback|api/etsy/webhook|api/inngest(?:/|$)|api/health|_next/static|_next/image|favicon.ico|icon.svg).*)",
   ],
 };

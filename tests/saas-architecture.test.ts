@@ -63,6 +63,9 @@ describe("SaaS architecture boundaries", () => {
     expect(proxy).toContain("etsy-kar-hesaplama(?:/|$)");
     expect(proxy).toContain("forgot-password(?:/|$)");
     expect(proxy).toContain("reset-password(?:/|$)");
+    expect(proxy).toContain("api/inngest(?:/|$)");
+    expect(proxy).toContain('pathname === "/api/inngest"');
+    expect(proxy).toContain('pathname.startsWith("/api/inngest/")');
     expect(proxy).not.toContain("app(?:/|$)");
     expect(proxy).toContain('new URL("/login", request.url)');
     expect(proxy).toContain("getSessionCookie");
