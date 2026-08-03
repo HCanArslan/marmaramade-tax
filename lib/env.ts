@@ -63,6 +63,10 @@ const serverEnvSchema = z.object({
     (value) => String(cleanEnvironmentValue(value) ?? "false").toLowerCase(),
     z.enum(["true", "false"]).transform((value) => value === "true"),
   ),
+  PUBLIC_SIGNUP_ENABLED: z.preprocess(
+    (value) => String(cleanEnvironmentValue(value) ?? "false").toLowerCase(),
+    z.enum(["true", "false"]).transform((value) => value === "true"),
+  ),
   TOKEN_ENCRYPTION_KEY: optionalSecret,
   ETSY_API_KEYSTRING: optionalSecret,
   ETSY_SHARED_SECRET: optionalSecret,
@@ -135,6 +139,11 @@ export function getServerEnv(): ServerEnv {
   );
   cached = parsed.data;
   return cached;
+}
+
+export function isPublicSignupEnabled() {
+  // No production transactional adapter exists yet. The flag alone cannot open signup.
+  return process.env.NODE_ENV !== "production" && getServerEnv().PUBLIC_SIGNUP_ENABLED;
 }
 
 export function requireAuthSecrets() {

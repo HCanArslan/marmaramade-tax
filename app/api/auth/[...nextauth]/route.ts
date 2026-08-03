@@ -1,14 +1,18 @@
 import { toNextJsHandler } from "better-auth/next-js";
 import { auth } from "@/lib/server/auth/config";
 import { recordAuthSecurityEvent } from "@/lib/server/repositories/auth-repository";
+import { isPublicSignupEnabled } from "@/lib/env";
 
 const handler = toNextJsHandler(auth);
 
 export const GET = handler.GET;
 
 export async function POST(request: Request) {
-  const response = await handler.POST(request);
   const path = new URL(request.url).pathname;
+  if (path.endsWith("/sign-up/email") && !isPublicSignupEnabled()) {
+    return Response.json({ code: "SIGNUP_CLOSED", message: "Early access is currently limited." }, { status: 403 });
+  }
+  const response = await handler.POST(request);
   const sensitiveFailure =
     !response.ok &&
     [

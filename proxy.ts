@@ -26,6 +26,6 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!$|pricing(?:/|$)|etsy-kar-hesaplama(?:/|$)|blog(?:/|$)|login(?:/|$)|signup(?:/|$)|forgot-password(?:/|$)|reset-password(?:/|$)|api/auth|api/cron|api/etsy/oauth/callback|api/etsy/webhook|api/inngest(?:/|$)|api/health|_next/static|_next/image|favicon.ico|icon.svg).*)",
+    "/((?!$|pricing(?:/|$)|etsy-kar-hesaplama(?:/|$)|blog(?:/|$)|terms(?:/|$)|privacy(?:/|$)|login(?:/|$)|signup(?:/|$)|forgot-password(?:/|$)|reset-password(?:/|$)|api/auth|api/cron|api/etsy/oauth/callback|api/etsy/webhook|api/inngest(?:/|$)|api/health|_next/static|_next/image|favicon.ico|icon.svg).*)",
   ],
 };

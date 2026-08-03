@@ -64,6 +64,16 @@ enum TaxPlanningPreset {
   CUSTOM
 }
 
+enum OnboardingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  WAITING_FOR_ETSY
+  WAITING_FOR_SYNC
+  NEEDS_MINIMUM_COSTS
+  COMPLETED
+  SKIPPED
+}
+
 model User {
   id               String            @id @default(cuid())
   name             String
@@ -182,6 +192,8 @@ model Workspace {
   costDefaultVersions   WorkspaceCostDefaultVersion[]
   portfolioScenarios    PortfolioScenario[]
   portfolioVersions     PortfolioScenarioVersion[]
+  onboarding            WorkspaceOnboarding?
+  productDefaultApplications ProductCostDefaultApplication[]
 }
 
 model Shop {
@@ -316,6 +328,7 @@ model Product {
   microExportCases   MicroExportCase[]
   workspace          Workspace?               @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   portfolioItems     PortfolioScenarioItem[]
+  onboardingDefaults ProductCostDefaultApplication?
 
   @@unique([workspaceId, sku])
   @@index([workspaceId, active])
@@ -791,14 +804,67 @@ model WorkspaceCostDefaultVersion {
   originCountry             String
   reportingCurrency         String
   targetMarket              String
+  averageLaborHours         Decimal?
+  defaultShippingCost       Decimal?
+  defaultShippingCurrency   String?
+  customsResponsibility     String?
+  marketplaceCurrency      String?
+  sourceLabel              String?
+  monthlyOverheadKnown     Boolean                    @default(false)
   createdAt                 DateTime                   @default(now())
   workspace                 Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   portfolioVersions         PortfolioScenarioVersion[]
+  productApplications       ProductCostDefaultApplication[]
 
   @@unique([workspaceId, versionNumber])
   @@unique([workspaceId, effectiveFrom])
   @@unique([workspaceId, activeKey], map: "WorkspaceCostDefaultVersion_one_active_key")
   @@index([workspaceId, effectiveFrom, effectiveTo])
+}
+
+model WorkspaceOnboarding {
+  id                       String           @id @default(cuid())
+  workspaceId              String           @unique
+  status                   OnboardingStatus @default(NOT_STARTED)
+  currentStep              Int              @default(1)
+  completedSteps           Int[]            @default([])
+  skippedOptionalSections  String[]         @default([])
+  schemaVersion            Int              @default(1)
+  etsyConnectionStatus     String?
+  initialSyncStatus        String?
+  businessProfileVersionId String?
+  costDefaultVersionId     String?
+  targetMarket             String?
+  reportingCurrency        String?
+  completenessSummary      Json?
+  startedAt                DateTime?
+  lastActivityAt           DateTime         @default(now())
+  completedAt              DateTime?
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+  workspace                Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([status, lastActivityAt])
+}
+
+model ProductCostDefaultApplication {
+  id                   String                      @id @default(cuid())
+  workspaceId          String
+  productId            String                      @unique
+  costDefaultVersionId String
+  laborHours           Decimal?
+  hourlyLaborValue     Decimal?
+  packagingCost        Decimal?
+  materialWastage      Decimal?
+  exportHandlingCost   Decimal?
+  source               String                      @default("ONBOARDING_DEFAULT")
+  appliedAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
+  workspace            Workspace                   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product              Product                     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  costDefaultVersion   WorkspaceCostDefaultVersion @relation(fields: [costDefaultVersionId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, costDefaultVersionId])
 }
 
 model PortfolioScenario {
